@@ -8,7 +8,7 @@
 
 There are several ways of editing your application.
 
-Generated UI scaffolding (originally produced via a third-party UI builder) — Lovable references removed.
+Generated UI scaffolding (originally produced via a third-party UI builder).
 
 **Use your preferred IDE**
 
