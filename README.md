@@ -2,15 +2,13 @@
 
 ## Project info
 
-**Project URL**: (removed third-party project link)
+**Project URL**:
 
 ## How can I edit this code?
 
 There are several ways of editing your application.
 
 Generated UI scaffolding (originally produced via a third-party UI builder).
-
-**Use your preferred IDE**
 
 If you want to work locally using your own IDE, you can clone this repo and push changes.
 
@@ -32,13 +30,13 @@ npm i
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Edit a file directly in GitHub
 
 - Navigate to the desired file(s).
 - Click the "Edit" button (pencil icon) at the top right of the file view.
 - Make your changes and commit the changes.
 
-**Use GitHub Codespaces**
+Use GitHub Codespaces
 
 - Navigate to the main page of your repository.
 - Click on the "Code" button (green button) near the top right.

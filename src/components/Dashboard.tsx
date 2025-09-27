@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { SAMPLE_DATA } from '@/data/sampleData';
+import { getKpis } from '@/lib/dataProvider';
+import type { KpisResponse } from '@/types/api';
 
 interface DashboardProps {
   onKpiClick: (kpi: string) => void;
@@ -9,6 +11,8 @@ interface DashboardProps {
 export const Dashboard = ({ onKpiClick }: DashboardProps) => {
   const revenueChartRef = useRef<HTMLCanvasElement>(null);
   const profitChartRef = useRef<HTMLCanvasElement>(null);
+  const [remoteKpis, setRemoteKpis] = useState<KpisResponse | null>(null);
+  const useRemote = (import.meta.env.VITE_USE_REMOTE_API === 'true');
 
   useEffect(() => {
     // Load Chart.js from CDN and create charts
@@ -23,6 +27,21 @@ export const Dashboard = ({ onKpiClick }: DashboardProps) => {
       document.head.removeChild(script);
     };
   }, []);
+
+  useEffect(() => {
+    if (!useRemote) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const kpis = await getKpis();
+        if (mounted) setRemoteKpis(kpis);
+      } catch (err) {
+        // keep fallback visible; toast handled by upstream when needed
+        console.error('Failed to fetch remote KPIs', err);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [useRemote]);
 
   const createCharts = () => {
     // @ts-ignore - Chart.js loaded from CDN
@@ -129,7 +148,7 @@ export const Dashboard = ({ onKpiClick }: DashboardProps) => {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {Object.entries(SAMPLE_DATA.kpis).map(([key, kpi]) => (
+  {Object.entries((useRemote && remoteKpis) ? remoteKpis : SAMPLE_DATA.kpis).map(([key, kpi]: any) => (
           <div
             key={key}
             className="kpi-card"
