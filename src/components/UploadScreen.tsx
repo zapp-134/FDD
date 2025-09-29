@@ -1,8 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { SAMPLE_DATA } from '@/data/sampleData';
+import { getIngestionHistory } from '@/lib/dataProvider';
+import { useIngestUpload } from '@/hooks/api/useIngestUpload';
+import { toast } from '@/hooks/use-toast';
+import type { IngestResponse } from '@/types/api';
 
 interface UploadScreenProps {
   onIngestionComplete: () => void;
@@ -13,8 +17,25 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [ingestionProgress, setIngestionProgress] = useState(0);
   const [isIngesting, setIsIngesting] = useState(false);
-  const [ingestionHistory, setIngestionHistory] = useState(SAMPLE_DATA.ingestionHistory);
+  const [ingestionHistory, setIngestionHistory] = useState<IngestResponse[]>(SAMPLE_DATA.ingestionHistory);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const useRemote = (import.meta.env.VITE_USE_REMOTE_API === 'true');
+  const ingestUpload = useIngestUpload();
+
+  useEffect(() => {
+    if (!useRemote) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const history = await getIngestionHistory();
+        if (mounted) setIngestionHistory(history);
+      } catch (err: any) {
+        toast({ title: 'Fetch ingestion history failed', description: String(err?.message ?? err) });
+      }
+    })();
+    return () => { mounted = false; };
+  }, [useRemote]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -71,6 +92,27 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
     
     // Notify parent component
     onIngestionComplete();
+  };
+
+  const submitFileRemote = async () => {
+    if (!selectedFile) return;
+    try {
+      setIsIngesting(true);
+      setIngestionProgress(0);
+      const form = new FormData();
+      form.append('file', selectedFile);
+      await ingestUpload.mutateAsync(form as any);
+      // refetch history
+      const history = await getIngestionHistory();
+      setIngestionHistory(history);
+      setIsIngesting(false);
+      setSelectedFile(null);
+      setIngestionProgress(0);
+      onIngestionComplete();
+    } catch (err: any) {
+      setIsIngesting(false);
+      toast({ title: 'Upload failed', description: String(err?.message ?? err) });
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -162,7 +204,7 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
             {selectedFile && (
               <div className="mt-4 flex gap-4">
                 <Button 
-                  onClick={simulateIngestion}
+                  onClick={useRemote ? submitFileRemote : simulateIngestion}
                   disabled={isIngesting}
                   className="bg-primary hover:bg-primary-hover"
                 >
