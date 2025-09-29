@@ -1,10 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SAMPLE_DATA } from '@/data/sampleData';
+import { getFinancials } from '@/lib/dataProvider';
+import { useFinancials } from '@/hooks/api/useFinancials';
+import { toast } from '@/hooks/use-toast';
+import type { FinancialsResponse } from '@/types/api';
 
 export const DetailedAnalysis = () => {
   const [selectedYear, setSelectedYear] = useState(2024);
+  const useRemote = (import.meta.env.VITE_USE_REMOTE_API === 'true');
+  const { data: remoteFinancials, error } = useFinancials();
+  const [financials, setFinancials] = useState<FinancialsResponse>(SAMPLE_DATA.financials as any);
+
+  useEffect(() => {
+    if (!useRemote) return;
+    if (error) {
+      toast({ title: 'Failed to load financials', description: String((error as any)?.message ?? error) });
+      return;
+    }
+    if (remoteFinancials) {
+      // minimal adapter: if remote returns different shape, map here. For now assume compatible.
+      setFinancials(remoteFinancials as FinancialsResponse);
+    }
+  }, [useRemote, remoteFinancials, error]);
   
   const exportCSV = () => {
     const headers = ['Line Item', 'Current Year', 'Prior Year', 'Variance %', 'Notes'];
