@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { SAMPLE_DATA } from '@/data/sampleData';
+import { useAssistantQuery } from '@/hooks/api/useAssistantQuery';
+import { getChatResponse } from '@/lib/dataProvider';
+import { toast } from '@/hooks/use-toast';
+import type { AssistantResponse } from '@/types/api';
 
 interface Message {
   id: string;
@@ -57,17 +61,45 @@ export const ChatWidget = () => {
 
     setMessages(prev => [...prev, userMessage]);
 
-    // Simulate AI response after a short delay
-    setTimeout(() => {
-      const response = findRelevantResponse(inputText);
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: response,
-        sender: 'assistant',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-    }, 800);
+    // Remote vs local response
+    if (import.meta.env.VITE_USE_REMOTE_API === 'true') {
+      (async () => {
+        try {
+          // try hookless fetch for single-shot response
+          const res: AssistantResponse = await getChatResponse(inputText);
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            text: (res.text ?? String(res)) as string,
+            sender: 'assistant',
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+        } catch (err: any) {
+          toast({ title: 'Failed to get assistant response', description: String(err?.message ?? err) });
+          // fallback to local response
+          const response = findRelevantResponse(inputText);
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            text: response,
+            sender: 'assistant',
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+        }
+      })();
+    } else {
+      // Simulate AI response after a short delay (local fallback)
+      setTimeout(() => {
+        const response = findRelevantResponse(inputText);
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          text: response,
+          sender: 'assistant',
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+      }, 800);
+    }
 
     setInputText('');
   };
