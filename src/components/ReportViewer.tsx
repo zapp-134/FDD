@@ -1,8 +1,38 @@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SAMPLE_DATA } from '@/data/sampleData';
+import { useState, useEffect } from 'react';
+import { useReportsGenerate } from '@/hooks/api/useReportsGenerate';
+import { getIngestionHistory } from '@/lib/dataProvider';
+import { toast } from '@/hooks/use-toast';
+import type { ReportResponse } from '@/types/api';
 
 export const ReportViewer = () => {
+  const useRemote = (import.meta.env.VITE_USE_REMOTE_API === 'true');
+  const reportsGen = useReportsGenerate();
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  const pollReportStatus = async (reportId: string) => {
+    // naive polling: assume GET /api/reports/:id/status available via dataProvider or API client
+    try {
+      setGenerating(true);
+      setProgress(10);
+      // poll loop
+      for (let i = 0; i < 20; i++) {
+        // small sleep
+        await new Promise(r => setTimeout(r, 1000));
+        setProgress(Math.min(90, 10 + i * 4));
+        // try to obtain a download URL; for now, assume reportsGen returns a download URL when ready
+        // If you have an endpoint to check status, replace this section with a GET call.
+      }
+      setProgress(100);
+      setGenerating(false);
+    } catch (err: any) {
+      setGenerating(false);
+      toast({ title: 'Failed to generate report', description: String(err?.message ?? err) });
+    }
+  };
   const downloadPDF = () => {
     // Simulate PDF download using browser print
     window.print();
@@ -17,6 +47,29 @@ export const ReportViewer = () => {
     a.download = `due-diligence-report-${SAMPLE_DATA.company.runId}.md`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const generateRemoteReport = async () => {
+    try {
+      setGenerating(true);
+      setProgress(5);
+      const res = await reportsGen.mutateAsync({ runId: SAMPLE_DATA.company.runId });
+      // expect { reportId } or { reportId, downloadUrl }
+      const report: ReportResponse = res as any;
+      const reportId = (report.reportId || (report as any).id) as string;
+      if (!reportId) throw new Error('No reportId returned from server');
+      await pollReportStatus(reportId);
+      // attempt to download via assumed URL pattern
+      const downloadUrl = (report as any).downloadUrl || `/api/reports/${reportId}/download`;
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `due-diligence-report-${reportId}.md`;
+      a.click();
+      setGenerating(false);
+    } catch (err: any) {
+      setGenerating(false);
+      toast({ title: 'Failed to generate report', description: String(err?.message ?? err) });
+    }
   };
 
   const generateMarkdownReport = () => {
@@ -131,10 +184,10 @@ While TechCorp shows strong financial performance and growth trajectory, the ide
         </div>
         
         <div className="flex gap-3">
-          <Button onClick={downloadPDF} className="bg-primary hover:bg-primary-hover">
+          <Button onClick={useRemote ? generateRemoteReport : downloadPDF} className="bg-primary hover:bg-primary-hover">
             📄 Download PDF
           </Button>
-          <Button onClick={downloadMarkdown} variant="outline">
+          <Button onClick={useRemote ? generateRemoteReport : downloadMarkdown} variant="outline">
             📝 Download Markdown
           </Button>
           <Button variant="outline">
