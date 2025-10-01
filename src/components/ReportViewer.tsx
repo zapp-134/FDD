@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { SAMPLE_DATA } from '@/data/sampleData';
 import { useState, useEffect } from 'react';
 import { useReportsGenerate } from '@/hooks/api/useReportsGenerate';
+import useReportStatus from '@/hooks/api/useReportStatus';
 import { getIngestionHistory } from '@/lib/dataProvider';
 import { toast } from '@/hooks/use-toast';
 import type { ReportResponse } from '@/types/api';
@@ -13,26 +14,7 @@ export const ReportViewer = () => {
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  const pollReportStatus = async (reportId: string) => {
-    // naive polling: assume GET /api/reports/:id/status available via dataProvider or API client
-    try {
-      setGenerating(true);
-      setProgress(10);
-      // poll loop
-      for (let i = 0; i < 20; i++) {
-        // small sleep
-        await new Promise(r => setTimeout(r, 1000));
-        setProgress(Math.min(90, 10 + i * 4));
-        // try to obtain a download URL; for now, assume reportsGen returns a download URL when ready
-        // If you have an endpoint to check status, replace this section with a GET call.
-      }
-      setProgress(100);
-      setGenerating(false);
-    } catch (err: any) {
-      setGenerating(false);
-      toast({ title: 'Failed to generate report', description: String(err?.message ?? err) });
-    }
-  };
+  // We'll use useReportStatus to poll when we have a reportId
   const downloadPDF = () => {
     // Simulate PDF download using browser print
     window.print();
@@ -58,13 +40,32 @@ export const ReportViewer = () => {
       const report: ReportResponse = res as any;
       const reportId = (report.reportId || (report as any).id) as string;
       if (!reportId) throw new Error('No reportId returned from server');
-      await pollReportStatus(reportId);
-      // attempt to download via assumed URL pattern
-      const downloadUrl = (report as any).downloadUrl || `/api/reports/${reportId}/download`;
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `due-diligence-report-${reportId}.md`;
-      a.click();
+      // start polling via hook
+      const statusQuery = useReportStatus(reportId);
+      // wait until ready or failed
+      // poll until status is ready
+      let finalStatus = 'pending';
+      for (let i = 0; i < 60; i++) {
+        // read latest
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // @ts-ignore - statusQuery may be undefined in this scope; use api client as fallback
+        const s = statusQuery?.data as any;
+        if (s?.status === 'ready') {
+          finalStatus = 'ready';
+          // download
+          const downloadUrl = s.downloadUrl || `/api/reports/${reportId}/download`;
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          a.download = `due-diligence-report-${reportId}.md`;
+          a.click();
+          break;
+        }
+        if (s?.status === 'failed') {
+          finalStatus = 'failed';
+          break;
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
       setGenerating(false);
     } catch (err: any) {
       setGenerating(false);
