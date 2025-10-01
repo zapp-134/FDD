@@ -23,6 +23,7 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
   const useRemote = (import.meta.env.VITE_USE_REMOTE_API === 'true');
   const ingestUpload = useIngestUpload();
   const toast = useToast();
+  const controllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!useRemote) return;
@@ -108,19 +109,25 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
 
   const submitFileRemote = async () => {
     if (!selectedFile) return;
+    // prepare abort controller
+    const controller = new AbortController();
+    controllerRef.current = controller;
+
     try {
       setIsIngesting(true);
       setIsUploading(true);
       setIngestionProgress(0);
-      // call mutation with File (hook will build FormData)
-      await ingestUpload.mutateAsync(selectedFile as File);
+
+      // call mutation with progress and signal
+      await ingestUpload.mutateAsync({ file: selectedFile as File, onProgress: setIngestionProgress, signal: controller.signal } as any);
+
       // refetch history and normalize
       const history = await getIngestionHistory();
       const mapped = (history || []).map((run: any) => ({
         runId: run.runId,
         status: run.status,
         fileName: run.fileName,
-        createdAt: run.uploadDate ?? run.uploadedAt ?? new Date().toISOString(),
+        createdAt: run.uploadDate ?? run.uploadedAt ?? run.createdAt ?? new Date().toISOString(),
         fileSize: run.fileSize ?? run.size ?? '',
         processingTime: run.processingTime ?? run.duration ?? ''
       }));
@@ -129,11 +136,24 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
       setIsUploading(false);
       setSelectedFile(null);
       setIngestionProgress(0);
+      controllerRef.current = null;
       onIngestionComplete();
     } catch (err: any) {
       setIsIngesting(false);
       setIsUploading(false);
-      toast?.toast?.({ title: 'Upload failed', description: String(err?.message ?? err), variant: 'destructive' });
+      controllerRef.current = null;
+      const message = (err && (err.name === 'CanceledError' || err.message === 'canceled')) ? 'Upload canceled' : String(err?.message ?? err);
+      toast?.toast?.({ title: 'Upload failed', description: message, variant: 'destructive' });
+    }
+  };
+
+  const cancelUpload = () => {
+    if (controllerRef.current) {
+      controllerRef.current.abort();
+      setIsUploading(false);
+      setIsIngesting(false);
+      toast?.toast?.({ title: 'Upload canceled', description: 'The upload was canceled by the user.' });
+      controllerRef.current = null;
     }
   };
 
