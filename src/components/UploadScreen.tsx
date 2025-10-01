@@ -5,7 +5,7 @@ import { Progress } from '@/components/ui/progress';
 import { SAMPLE_DATA } from '@/data/sampleData';
 import { getIngestionHistory } from '@/lib/dataProvider';
 import { useIngestUpload } from '@/hooks/api/useIngestUpload';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import type { IngestResponse } from '@/types/api';
 
 interface UploadScreenProps {
@@ -18,10 +18,11 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
   const [ingestionProgress, setIngestionProgress] = useState(0);
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionHistory, setIngestionHistory] = useState<IngestResponse[]>(SAMPLE_DATA.ingestionHistory);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const useRemote = (import.meta.env.VITE_USE_REMOTE_API === 'true');
   const ingestUpload = useIngestUpload();
+  const toast = useToast();
 
   useEffect(() => {
     if (!useRemote) return;
@@ -29,9 +30,20 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
     (async () => {
       try {
         const history = await getIngestionHistory();
-        if (mounted) setIngestionHistory(history);
+        if (mounted) {
+          // normalize incoming history to canonical shape
+          const mapped = (history || []).map((run: any) => ({
+            runId: run.runId,
+            status: run.status,
+            fileName: run.fileName,
+            createdAt: run.uploadDate ?? run.uploadedAt ?? new Date().toISOString(),
+            fileSize: run.fileSize ?? run.size ?? '',
+            processingTime: run.processingTime ?? run.duration ?? ''
+          }));
+          setIngestionHistory(mapped as IngestResponse[]);
+        }
       } catch (err: any) {
-        toast({ title: 'Fetch ingestion history failed', description: String(err?.message ?? err) });
+        toast?.toast?.({ title: 'Fetch ingestion history failed', description: String(err?.message ?? err), variant: 'destructive' });
       }
     })();
     return () => { mounted = false; };
@@ -77,15 +89,15 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
 
     // Add new run to history
     const newRun = {
-      runId: `RUN-2024-${String(Date.now()).slice(-3)}`,
-      fileName: selectedFile.name,
-      uploadDate: new Date().toISOString().split('T')[0],
+      runId: `RUN-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
       status: 'completed' as const,
+      fileName: selectedFile.name,
+      createdAt: new Date().toISOString(),
       fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB`,
       processingTime: '2m 34s'
     };
 
-    setIngestionHistory([newRun, ...ingestionHistory]);
+    setIngestionHistory(prev => [newRun as IngestResponse, ...prev]);
     setIsIngesting(false);
     setSelectedFile(null);
     setIngestionProgress(0);
@@ -98,20 +110,30 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
     if (!selectedFile) return;
     try {
       setIsIngesting(true);
+      setIsUploading(true);
       setIngestionProgress(0);
-      const form = new FormData();
-      form.append('file', selectedFile);
-      await ingestUpload.mutateAsync(form as any);
-      // refetch history
+      // call mutation with File (hook will build FormData)
+      await ingestUpload.mutateAsync(selectedFile as File);
+      // refetch history and normalize
       const history = await getIngestionHistory();
-      setIngestionHistory(history);
+      const mapped = (history || []).map((run: any) => ({
+        runId: run.runId,
+        status: run.status,
+        fileName: run.fileName,
+        createdAt: run.uploadDate ?? run.uploadedAt ?? new Date().toISOString(),
+        fileSize: run.fileSize ?? run.size ?? '',
+        processingTime: run.processingTime ?? run.duration ?? ''
+      }));
+      setIngestionHistory(mapped as IngestResponse[]);
       setIsIngesting(false);
+      setIsUploading(false);
       setSelectedFile(null);
       setIngestionProgress(0);
       onIngestionComplete();
     } catch (err: any) {
       setIsIngesting(false);
-      toast({ title: 'Upload failed', description: String(err?.message ?? err) });
+      setIsUploading(false);
+      toast?.toast?.({ title: 'Upload failed', description: String(err?.message ?? err), variant: 'destructive' });
     }
   };
 
@@ -173,6 +195,9 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { fileInputRef.current?.click(); } }}
             >
               <div className="space-y-4">
                 <div className="text-4xl">📄</div>
@@ -251,7 +276,7 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
                     <tr key={run.runId} className="hover:bg-muted/50">
                       <td className="font-mono text-sm">{run.runId}</td>
                       <td>{run.fileName}</td>
-                      <td>{run.uploadDate}</td>
+                      <td>{(run as any).createdAt ?? (run as any).uploadDate ?? (run as any).uploadedAt ?? '—'}</td>
                       <td>{getStatusBadge(run.status)}</td>
                       <td>{run.fileSize}</td>
                       <td>{run.processingTime}</td>

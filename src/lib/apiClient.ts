@@ -16,3 +16,6 @@ export function createFetcher<T>(path: string, opts?: AxiosRequestConfig) {
     return res.data;
   };
 }
+
+// default export for compatibility with hooks that import default
+export default api;

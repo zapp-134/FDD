@@ -1,9 +1,22 @@
 import { useMutation } from "@tanstack/react-query";
-import { getIngestionHistory, getChatResponse } from "../../lib/dataProvider";
+import api from "@/lib/apiClient";
+import { useToast } from "@/hooks/use-toast";
 
 export function useReportsGenerate() {
-  return useMutation({ mutationFn: async (params?: unknown) => {
-    // Placeholder: in absence of a real report generation endpoint, return ingestion history
-    return getIngestionHistory();
-  } });
+  const toast = useToast();
+
+  return useMutation({
+    mutationFn: async (payload?: unknown) => {
+      // kick off report generation
+      const res = await api.post('/reports/generate', payload ?? {});
+      return res.data as { reportId?: string };
+    },
+    onError: () => {
+      toast?.toast?.({
+        title: 'Report generation failed',
+        description: 'Unable to generate report',
+        variant: 'destructive',
+      });
+    },
+  });
 }

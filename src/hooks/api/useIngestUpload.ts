@@ -1,11 +1,27 @@
 import { useMutation } from "@tanstack/react-query";
-import { getIngestionHistory } from "../../lib/dataProvider";
+import api from "@/lib/apiClient";
+import { useToast } from "@/hooks/use-toast";
 
-// This hook triggers a fetch of ingestion history (upload endpoint should be implemented on the server).
 export function useIngestUpload() {
-  return useMutation({ mutationFn: async (payload: unknown) => {
-    // if the server supports an upload endpoint this should call it; for now we refetch history
-    await Promise.resolve();
-    return getIngestionHistory();
-  } });
+  const toast = useToast();
+
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+
+      const res = await api.post('/ingest', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      return res.data as { ingestId: string };
+    },
+    onError: () => {
+      toast?.toast?.({
+        title: 'Upload failed',
+        description: 'Unable to upload file',
+        variant: 'destructive',
+      });
+    },
+  });
 }

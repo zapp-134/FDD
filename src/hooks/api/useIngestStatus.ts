@@ -1,9 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { getIngestionHistory } from "../../lib/dataProvider";
+import api from "@/lib/apiClient";
 
 export function useIngestStatus(id: string) {
-  return useQuery({ queryKey: ["ingest", id], queryFn: async () => {
-    const history = await getIngestionHistory();
-    return history.find((h: any) => h.runId === id) ?? null;
-  } });
+  return useQuery({
+    queryKey: ["ingest", id],
+    queryFn: async () => {
+      const res = await api.get(`/ingest/${id}/status`);
+      return res.data;
+    },
+    enabled: !!id,
+  });
 }
