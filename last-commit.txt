@@ -1,3 +1,0 @@
-bcfdf981ce40c6c7f992eef13b6a886509d36edd zayaan.byramji Thu Oct 2 14:29:19 2025 +0530 fix(test): avoid import.meta in components; use runtime global shim
-src/components/ReportViewer.tsx
-src/main.tsx
