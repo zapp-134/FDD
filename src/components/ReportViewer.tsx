@@ -9,9 +9,7 @@ import { toast } from '@/hooks/use-toast';
 import type { ReportResponse, ReportStatus } from '@/types/api';
 
 export const ReportViewer = () => {
-  // Read Vite env in a test-safe way: prefer a testing shim (globalThis.__VITE_MOCK_ENV__).
-  // Avoid using `import.meta` directly so Jest (ts-jest) can import this module without parsing errors.
-  const useRemote = ((globalThis as any).__VITE_MOCK_ENV__?.VITE_USE_REMOTE_API === 'true');
+  const useRemote = String((globalThis as any).__VITE_USE_REMOTE_API ?? process.env.VITE_USE_REMOTE_API ?? 'false') === 'true';
   const reportsGen = useReportsGenerate();
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
