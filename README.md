@@ -21,6 +21,32 @@ Follow these steps:
 git clone <YOUR_GIT_URL>
 
 # Step 2: Navigate to the project directory.
+![CI](https://github.com/zapp-134/FDD/actions/workflows/ci.yml/badge.svg)
+
+````markdown
+# Welcome to your Financial Due Diligence Agent project
+
+## Project info
+
+**Project URL**:
+
+## How can I edit this code?
+
+There are several ways of editing your application.
+
+Generated UI scaffolding (originally produced via a third-party UI builder).
+
+If you want to work locally using your own IDE, you can clone this repo and push changes.
+
+The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+
+Follow these steps:
+
+```sh
+# Step 1: Clone the repository using the project's Git URL.
+git clone <YOUR_GIT_URL>
+
+# Step 2: Navigate to the project directory.
 cd <YOUR_PROJECT_NAME>
 
 # Step 3: Install the necessary dependencies.
@@ -61,3 +87,5 @@ To publish the project, follow your preferred deployment process for a Vite-buil
 ## Can I connect a custom domain?
 
 Yes — configure your hosting provider or CDN with your custom domain and point it at the deployed build artifacts. Refer to your hosting provider's documentation for exact steps.
+
+````
