@@ -17,7 +17,7 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [ingestionProgress, setIngestionProgress] = useState(0);
   const [isIngesting, setIsIngesting] = useState(false);
-  const [ingestionHistory, setIngestionHistory] = useState<IngestResponse[]>(SAMPLE_DATA.ingestionHistory);
+  const [ingestionHistory, setIngestionHistory] = useState<IngestResponse[]>((SAMPLE_DATA.ingestionHistory as any) ?? []);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const useRemote = (import.meta.env.VITE_USE_REMOTE_API === 'true');
