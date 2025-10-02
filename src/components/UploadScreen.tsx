@@ -1,8 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { SAMPLE_DATA } from '@/data/sampleData';
+import { getIngestionHistory } from '@/lib/dataProvider';
+import { useIngestUpload } from '@/hooks/api/useIngestUpload';
+import { useToast } from '@/hooks/use-toast';
+import type { IngestResponse } from '@/types/api';
 
 interface UploadScreenProps {
   onIngestionComplete: () => void;
@@ -13,8 +17,38 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [ingestionProgress, setIngestionProgress] = useState(0);
   const [isIngesting, setIsIngesting] = useState(false);
-  const [ingestionHistory, setIngestionHistory] = useState(SAMPLE_DATA.ingestionHistory);
+  const [ingestionHistory, setIngestionHistory] = useState<IngestResponse[]>((SAMPLE_DATA.ingestionHistory as any) ?? []);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const useRemote = (import.meta.env.VITE_USE_REMOTE_API === 'true');
+  const ingestUpload = useIngestUpload();
+  const toast = useToast();
+  const controllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!useRemote) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const history = await getIngestionHistory();
+        if (mounted) {
+          // normalize incoming history to canonical shape
+          const mapped = (history || []).map((run: any) => ({
+            runId: run.runId,
+            status: run.status,
+            fileName: run.fileName,
+            createdAt: run.uploadDate ?? run.uploadedAt ?? new Date().toISOString(),
+            fileSize: run.fileSize ?? run.size ?? '',
+            processingTime: run.processingTime ?? run.duration ?? ''
+          }));
+          setIngestionHistory(mapped as IngestResponse[]);
+        }
+      } catch (err: any) {
+        toast?.toast?.({ title: 'Fetch ingestion history failed', description: String(err?.message ?? err), variant: 'destructive' });
+      }
+    })();
+    return () => { mounted = false; };
+  }, [useRemote]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -56,21 +90,71 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
 
     // Add new run to history
     const newRun = {
-      runId: `RUN-2024-${String(Date.now()).slice(-3)}`,
-      fileName: selectedFile.name,
-      uploadDate: new Date().toISOString().split('T')[0],
+      runId: `RUN-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
       status: 'completed' as const,
+      fileName: selectedFile.name,
+      createdAt: new Date().toISOString(),
       fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB`,
       processingTime: '2m 34s'
     };
 
-    setIngestionHistory([newRun, ...ingestionHistory]);
+    setIngestionHistory(prev => [newRun as IngestResponse, ...prev]);
     setIsIngesting(false);
     setSelectedFile(null);
     setIngestionProgress(0);
     
     // Notify parent component
     onIngestionComplete();
+  };
+
+  const submitFileRemote = async () => {
+    if (!selectedFile) return;
+    // prepare abort controller
+    const controller = new AbortController();
+    controllerRef.current = controller;
+
+    try {
+      setIsIngesting(true);
+      setIsUploading(true);
+      setIngestionProgress(0);
+
+      // call mutation with progress and signal
+      await ingestUpload.mutateAsync({ file: selectedFile as File, onProgress: setIngestionProgress, signal: controller.signal } as any);
+
+      // refetch history and normalize
+      const history = await getIngestionHistory();
+      const mapped = (history || []).map((run: any) => ({
+        runId: run.runId,
+        status: run.status,
+        fileName: run.fileName,
+        createdAt: run.uploadDate ?? run.uploadedAt ?? run.createdAt ?? new Date().toISOString(),
+        fileSize: run.fileSize ?? run.size ?? '',
+        processingTime: run.processingTime ?? run.duration ?? ''
+      }));
+      setIngestionHistory(mapped as IngestResponse[]);
+      setIsIngesting(false);
+      setIsUploading(false);
+      setSelectedFile(null);
+      setIngestionProgress(0);
+      controllerRef.current = null;
+      onIngestionComplete();
+    } catch (err: any) {
+      setIsIngesting(false);
+      setIsUploading(false);
+      controllerRef.current = null;
+      const message = (err && (err.name === 'CanceledError' || err.message === 'canceled')) ? 'Upload canceled' : String(err?.message ?? err);
+      toast?.toast?.({ title: 'Upload failed', description: message, variant: 'destructive' });
+    }
+  };
+
+  const cancelUpload = () => {
+    if (controllerRef.current) {
+      controllerRef.current.abort();
+      setIsUploading(false);
+      setIsIngesting(false);
+      toast?.toast?.({ title: 'Upload canceled', description: 'The upload was canceled by the user.' });
+      controllerRef.current = null;
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -131,6 +215,9 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { fileInputRef.current?.click(); } }}
             >
               <div className="space-y-4">
                 <div className="text-4xl">📄</div>
@@ -162,7 +249,7 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
             {selectedFile && (
               <div className="mt-4 flex gap-4">
                 <Button 
-                  onClick={simulateIngestion}
+                  onClick={useRemote ? submitFileRemote : simulateIngestion}
                   disabled={isIngesting}
                   className="bg-primary hover:bg-primary-hover"
                 >
@@ -209,7 +296,7 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
                     <tr key={run.runId} className="hover:bg-muted/50">
                       <td className="font-mono text-sm">{run.runId}</td>
                       <td>{run.fileName}</td>
-                      <td>{run.uploadDate}</td>
+                      <td>{(run as any).createdAt ?? (run as any).uploadDate ?? (run as any).uploadedAt ?? '—'}</td>
                       <td>{getStatusBadge(run.status)}</td>
                       <td>{run.fileSize}</td>
                       <td>{run.processingTime}</td>

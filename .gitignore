@@ -22,3 +22,19 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Dependency lockfiles (often intentionally committed; keep if you use CI workflows)
+# If you regenerate lockfiles locally and don't want to commit them, uncomment the following:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+# bun.lockb
+
+# Environment files
+.env
+.env.*
+
+# Build output
+/.parcel-cache
+/.next
+/.turbo

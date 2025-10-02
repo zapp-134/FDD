@@ -1,0 +1,9 @@
+{
+  "kpis": { "revenue": 123456, "growth": 0.12, "activeUsers": 9876 },
+  "financials": { "profit": 54321, "expenses": 12345 },
+  "ingestionHistory": [
+    { "runId": "run_1", "status": "completed", "uploadedAt": "2025-01-01T00:00:00Z" }
+  ],
+  "reports": { "reportId": "rpt_1", "status": "ready", "url": "/reports/rpt_1.pdf" },
+  "assistant": { "reply": "Hello from mock assistant" }
+}

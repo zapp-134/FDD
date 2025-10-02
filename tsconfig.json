@@ -9,6 +9,11 @@
     "paths": {
       "@/*": ["./src/*"]
     },
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "jsx": "react-jsx",
+  "module": "ESNext",
+  "moduleResolution": "bundler",
     "noImplicitAny": false,
     "noUnusedParameters": false,
     "skipLibCheck": true,

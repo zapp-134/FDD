@@ -1,9 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-// removed lovable-tagger import (dev-only tagging plugin removed)
 
-// https://vitejs.dev/config/
+// Vite configuration
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
@@ -11,7 +10,6 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    // lovabled dev plugin removed; keep only react() in plugins for now
   ].filter(Boolean),
   resolve: {
     alias: {

@@ -1,8 +1,24 @@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SAMPLE_DATA } from '@/data/sampleData';
+import { useState, useEffect } from 'react';
+import { useReportsGenerate } from '@/hooks/api/useReportsGenerate';
+import useReportStatus from '@/hooks/api/useReportStatus';
+import { getIngestionHistory } from '@/lib/dataProvider';
+import { toast } from '@/hooks/use-toast';
+import type { ReportResponse, ReportStatus } from '@/types/api';
 
 export const ReportViewer = () => {
+  const useRemote = String((globalThis as any).__VITE_USE_REMOTE_API ?? process.env.VITE_USE_REMOTE_API ?? 'false') === 'true';
+  const reportsGen = useReportsGenerate();
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [reportId, setReportId] = useState<string | undefined>(undefined);
+
+  // useReportStatus must be called at top-level of the component
+  const statusQuery = useReportStatus(reportId);
+
+  // We'll use useReportStatus to poll when we have a reportId
   const downloadPDF = () => {
     // Simulate PDF download using browser print
     window.print();
@@ -18,6 +34,52 @@ export const ReportViewer = () => {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  const generateRemoteReport = async () => {
+    try {
+      setGenerating(true);
+      setProgress(5);
+      const res = await reportsGen.mutateAsync({ runId: SAMPLE_DATA.company.runId });
+      // expect { reportId } or { reportId, downloadUrl }
+      const report: ReportResponse = res as any;
+      const id = (report.reportId || (report as any).id) as string;
+      if (!id) throw new Error('No reportId returned from server');
+      // set the reportId which enables the polling hook
+      setReportId(id);
+    } catch (err: any) {
+      setGenerating(false);
+      toast({ title: 'Failed to generate report', description: String(err?.message ?? err) });
+    }
+  };
+
+  // react to status changes from the polling hook
+  useEffect(() => {
+    if (!reportId) return;
+    const s = statusQuery?.data as ReportStatus | undefined;
+    if (!s) return;
+
+    if (s.status === 'ready') {
+      // prefer a downloadUrl from the status payload, otherwise hit the download endpoint
+      const downloadUrl = (s as any).downloadUrl || `/api/reports/${reportId}/download`;
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `due-diligence-report-${reportId}.md`;
+      a.click();
+      setGenerating(false);
+      setReportId(undefined);
+      setProgress(0);
+    } else if (s.status === 'failed') {
+      setGenerating(false);
+      toast({ title: 'Report generation failed', description: 'Remote report generation failed' });
+      setReportId(undefined);
+    } else {
+      // update progress if backend provides it
+      if ((s as any).progress != null) {
+        setProgress(Number((s as any).progress));
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusQuery.data, reportId]);
 
   const generateMarkdownReport = () => {
     return `# Financial Due Diligence Report
@@ -131,10 +193,10 @@ While TechCorp shows strong financial performance and growth trajectory, the ide
         </div>
         
         <div className="flex gap-3">
-          <Button onClick={downloadPDF} className="bg-primary hover:bg-primary-hover">
+          <Button onClick={useRemote ? generateRemoteReport : downloadPDF} className="bg-primary hover:bg-primary-hover">
             📄 Download PDF
           </Button>
-          <Button onClick={downloadMarkdown} variant="outline">
+          <Button onClick={useRemote ? generateRemoteReport : downloadMarkdown} variant="outline">
             📝 Download Markdown
           </Button>
           <Button variant="outline">
