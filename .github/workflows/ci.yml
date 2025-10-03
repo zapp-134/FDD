@@ -66,4 +66,3 @@ jobs:
         run: |
           docker build -f Dockerfile.frontend -t fdd-frontend:ci .
           docker build -f backend/Dockerfile -t fdd-backend:ci backend
-
