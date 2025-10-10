@@ -38,3 +38,13 @@ dist-ssr
 /.parcel-cache
 /.next
 /.turbo
+
+# CI / local artifacts
+run-*/
+coverage-*/
+coverage/
+sonar-report.html
+sonar-report.json
+zap_report.html
+zap_report.json
+run-*/
