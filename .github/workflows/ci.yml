@@ -23,6 +23,17 @@ jobs:
         run: npm run typecheck
       - name: Build frontend
         run: npm run build
+      - name: SonarQube scan (optional)
+        if: ${{ secrets.SONAR_TOKEN != '' && secrets.SONAR_HOST_URL != '' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          set -e
+          echo "Installing sonar-scanner..."
+          npm install -g sonar-scanner
+          echo "Running sonar-scanner"
+          sonar-scanner -Dsonar.login=${SONAR_TOKEN} -Dsonar.host.url=${SONAR_HOST_URL}
       - name: Run frontend tests
         run: npm test -- --coverage --coverageDirectory=coverage/frontend
       - name: Upload frontend coverage
@@ -30,6 +41,12 @@ jobs:
         with:
           name: coverage-frontend
           path: coverage/frontend
+      - name: Upload Sonar report (if produced)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonar-report
+          path: sonar-report.html
 
   backend:
     name: Backend build & test
@@ -55,4 +72,87 @@ jobs:
         with:
           name: coverage-backend
           path: backend/coverage
+
+  zap-scan:
+    name: OWASP ZAP DAST
+    runs-on: ubuntu-latest
+    needs: frontend
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install static server
+        run: npm ci && npm install -g serve
+      - name: Serve built frontend in background
+        run: |
+          npx serve -s dist -l 5173 &
+          echo "Waiting for server..."
+          for i in {1..30}; do
+            if curl -sSf http://localhost:5173 >/dev/null; then break; fi
+            sleep 1
+          done
+      - name: Run ZAP baseline scan
+        env:
+          ZAP_FAIL_RISK: "Medium"
+        run: |
+          docker run --rm -v $(pwd):/zap/wrk/:rw owasp/zap2docker-stable zap-baseline.py -t http://localhost:5173 -r zap_report.html -J zap_report.json -I -z "-config api.disablekey=true" -T 120 -f html -g gen.conf -r zap_report.html -x zap_report.xml || true
+      - name: Upload ZAP report
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: zap_report.html
+      - name: Fail on high risk findings
+        run: |
+          if [ -f zap_report.json ]; then
+            jq '.site[]?.alerts[]? | select(.risk > "Medium")' zap_report.json > /dev/null && (echo "High risk alerts found" && exit 1) || echo "No high risk alerts"
+          else
+            echo "No zap_report.json produced; skipping fail check"
+          fi
   # optional-docker job removed to avoid running Docker builds in CI for now
+  docker:
+    name: Build and optionally push Docker images
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+      - name: Login to registry (if creds provided)
+        if: ${{ secrets.DOCKER_REGISTRY && secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build frontend image
+        id: build_frontend
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.frontend -t ${{ env.DOCKER_REGISTRY }}/fdd-frontend:${{ github.sha }} --load .
+      - name: Build backend image
+        id: build_backend
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 -f backend/Dockerfile -t ${{ env.DOCKER_REGISTRY }}/fdd-backend:${{ github.sha }} --load backend/
+      - name: Push images (if creds)
+        if: ${{ secrets.DOCKER_REGISTRY && secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
+        run: |
+          docker push ${{ secrets.DOCKER_REGISTRY }}/fdd-frontend:${{ github.sha }}
+          docker push ${{ secrets.DOCKER_REGISTRY }}/fdd-backend:${{ github.sha }}
+      - name: Upload image metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-metadata
+          path: |
+            ./image-metadata-frontend.txt
+            ./image-metadata-backend.txt

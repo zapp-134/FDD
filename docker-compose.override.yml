@@ -1,0 +1,15 @@
+version: '3.8'
+# Development override: mount source for faster iteration
+services:
+  frontend:
+    volumes:
+      - ./:/app:cached
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+  backend:
+    volumes:
+      - ./backend:/app:cached
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development

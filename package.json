@@ -14,6 +14,8 @@
     "typecheck": "tsc --noEmit",
     "mock": "node ./dev/mock-server/index.js",
     "test": "jest --passWithNoTests"
+    ,"sonar:scan": "sonar-scanner"
+    ,"zap:scan": "zap-baseline.py -t http://localhost:5173 -r zap_report.html"
   },
   "test:backend": "(cd backend && npm test)",
   "docker:up": "docker-compose up --build",
