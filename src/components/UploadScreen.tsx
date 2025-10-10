@@ -17,7 +17,7 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [ingestionProgress, setIngestionProgress] = useState(0);
   const [isIngesting, setIsIngesting] = useState(false);
-  const [ingestionHistory, setIngestionHistory] = useState<IngestResponse[]>((SAMPLE_DATA.ingestionHistory as any) ?? []);
+  const [ingestionHistory, setIngestionHistory] = useState<IngestResponse[]>((SAMPLE_DATA.ingestionHistory as unknown as IngestResponse[]) ?? []);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const useRemote = (import.meta.env.VITE_USE_REMOTE_API === 'true');
@@ -33,18 +33,22 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
         const history = await getIngestionHistory();
         if (mounted) {
           // normalize incoming history to canonical shape
-          const mapped = (history || []).map((run: any) => ({
-            runId: run.runId,
-            status: run.status,
-            fileName: run.fileName,
-            createdAt: run.uploadDate ?? run.uploadedAt ?? new Date().toISOString(),
-            fileSize: run.fileSize ?? run.size ?? '',
-            processingTime: run.processingTime ?? run.duration ?? ''
-          }));
-          setIngestionHistory(mapped as IngestResponse[]);
+          const mapped = (history || []).map((run: unknown) => {
+            const r = run as Record<string, unknown>;
+            return {
+              runId: String(r['runId'] ?? r['id'] ?? ''),
+              status: String(r['status'] ?? r['state'] ?? 'queued'),
+              fileName: String(r['fileName'] ?? r['name'] ?? ''),
+              createdAt: String(r['uploadDate'] ?? r['uploadedAt'] ?? r['createdAt'] ?? new Date().toISOString()),
+              fileSize: String(r['fileSize'] ?? r['size'] ?? ''),
+              processingTime: String(r['processingTime'] ?? r['duration'] ?? '')
+            } as IngestResponse;
+          });
+          setIngestionHistory(mapped);
         }
-      } catch (err: any) {
-        toast?.toast?.({ title: 'Fetch ingestion history failed', description: String(err?.message ?? err), variant: 'destructive' });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err ?? 'Unknown error');
+        toast?.toast?.({ title: 'Fetch ingestion history failed', description: message, variant: 'destructive' });
       }
     })();
     return () => { mounted = false; };
@@ -119,30 +123,34 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
       setIngestionProgress(0);
 
       // call mutation with progress and signal
-      await ingestUpload.mutateAsync({ file: selectedFile as File, onProgress: setIngestionProgress, signal: controller.signal } as any);
+    const payload: { file: File; onProgress?: (p: number) => void; signal?: AbortSignal } = { file: selectedFile as File, onProgress: setIngestionProgress, signal: controller.signal };
+  await ingestUpload.mutateAsync(payload as unknown as Record<string, unknown>);
 
       // refetch history and normalize
       const history = await getIngestionHistory();
-      const mapped = (history || []).map((run: any) => ({
-        runId: run.runId,
-        status: run.status,
-        fileName: run.fileName,
-        createdAt: run.uploadDate ?? run.uploadedAt ?? run.createdAt ?? new Date().toISOString(),
-        fileSize: run.fileSize ?? run.size ?? '',
-        processingTime: run.processingTime ?? run.duration ?? ''
-      }));
-      setIngestionHistory(mapped as IngestResponse[]);
+      const mapped = (history || []).map((run: unknown) => {
+        const r = run as Record<string, unknown>;
+        return {
+          runId: String(r['runId'] ?? r['id'] ?? ''),
+          status: String(r['status'] ?? r['state'] ?? 'queued'),
+          fileName: String(r['fileName'] ?? r['name'] ?? ''),
+          createdAt: String(r['uploadDate'] ?? r['uploadedAt'] ?? r['createdAt'] ?? new Date().toISOString()),
+          fileSize: String(r['fileSize'] ?? r['size'] ?? ''),
+          processingTime: String(r['processingTime'] ?? r['duration'] ?? '')
+        } as IngestResponse;
+      });
+      setIngestionHistory(mapped);
       setIsIngesting(false);
       setIsUploading(false);
       setSelectedFile(null);
       setIngestionProgress(0);
       controllerRef.current = null;
       onIngestionComplete();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsIngesting(false);
       setIsUploading(false);
       controllerRef.current = null;
-      const message = (err && (err.name === 'CanceledError' || err.message === 'canceled')) ? 'Upload canceled' : String(err?.message ?? err);
+      const message = (err instanceof Error && (err.name === 'CanceledError' || err.message === 'canceled')) ? 'Upload canceled' : (err instanceof Error ? err.message : String(err ?? 'Unknown error'));
       toast?.toast?.({ title: 'Upload failed', description: message, variant: 'destructive' });
     }
   };
@@ -296,7 +304,12 @@ export const UploadScreen = ({ onIngestionComplete }: UploadScreenProps) => {
                     <tr key={run.runId} className="hover:bg-muted/50">
                       <td className="font-mono text-sm">{run.runId}</td>
                       <td>{run.fileName}</td>
-                      <td>{(run as any).createdAt ?? (run as any).uploadDate ?? (run as any).uploadedAt ?? '—'}</td>
+                      <td>{
+                        (run.createdAt as string) ??
+                        (String(((run as unknown) as Record<string, unknown>)['uploadDate']) || undefined) ??
+                        (String(((run as unknown) as Record<string, unknown>)['uploadedAt']) || undefined) ??
+                        '—'
+                      }</td>
                       <td>{getStatusBadge(run.status)}</td>
                       <td>{run.fileSize}</td>
                       <td>{run.processingTime}</td>

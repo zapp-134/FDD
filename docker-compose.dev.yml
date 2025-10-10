@@ -1,0 +1,25 @@
+version: '3.8'
+services:
+  frontend:
+    image: node:20-bullseye
+    working_dir: /app
+    command: sh -c "npm install --silent && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./:/app:cached
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+
+  backend:
+    image: node:20-bullseye
+    working_dir: /app
+    command: sh -c "cd backend && npm install --silent && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./backend:/app:cached
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development

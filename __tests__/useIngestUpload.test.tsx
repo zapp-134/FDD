@@ -10,7 +10,7 @@ const TestComponent = () => {
   const mutation = useIngestUpload();
   const start = async () => {
     const file = new File(['hello'], 'test.txt', { type: 'text/plain' });
-    await mutation.mutateAsync({ file, onProgress: (p: number) => console.log('progress', p) } as any);
+  await mutation.mutateAsync({ file, onProgress: (p: number) => console.log('progress', p) });
     const el = document.getElementById('done-marker');
     if (el) el.textContent = 'done';
   };

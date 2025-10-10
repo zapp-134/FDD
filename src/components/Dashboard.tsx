@@ -44,12 +44,12 @@ export const Dashboard = ({ onKpiClick }: DashboardProps) => {
   }, [useRemote]);
 
   const createCharts = () => {
-    // @ts-ignore - Chart.js loaded from CDN
+  // @ts-expect-error - Chart.js loaded from CDN
     if (typeof Chart === 'undefined') return;
 
     // Revenue Trend Chart
     if (revenueChartRef.current) {
-      // @ts-ignore
+  // @ts-expect-error - Chart.js global from CDN
       new Chart(revenueChartRef.current, {
         type: 'line',
         data: {
@@ -75,8 +75,10 @@ export const Dashboard = ({ onKpiClick }: DashboardProps) => {
             y: {
               beginAtZero: false,
               ticks: {
-                callback: function(value: any) {
-                  return '$' + (value / 1000000).toFixed(1) + 'M';
+                callback: function(this: unknown, value: unknown) {
+                  const num = typeof value === 'number' ? value : Number(value as unknown);
+                  if (Number.isNaN(num)) return String(value);
+                  return '$' + (num / 1000000).toFixed(1) + 'M';
                 }
               }
             }
@@ -87,7 +89,7 @@ export const Dashboard = ({ onKpiClick }: DashboardProps) => {
 
     // Quarterly Profit Chart
     if (profitChartRef.current) {
-      // @ts-ignore
+  // @ts-expect-error - Chart.js global from CDN
       new Chart(profitChartRef.current, {
         type: 'bar',
         data: {
@@ -111,8 +113,10 @@ export const Dashboard = ({ onKpiClick }: DashboardProps) => {
             y: {
               beginAtZero: true,
               ticks: {
-                callback: function(value: any) {
-                  return '$' + (value / 1000).toFixed(0) + 'K';
+                callback: function(this: unknown, value: unknown) {
+                  const num = typeof value === 'number' ? value : Number(value as unknown);
+                  if (Number.isNaN(num)) return String(value);
+                  return '$' + (num / 1000).toFixed(0) + 'K';
                 }
               }
             }
@@ -148,30 +152,34 @@ export const Dashboard = ({ onKpiClick }: DashboardProps) => {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-  {Object.entries((useRemote && remoteKpis) ? remoteKpis : SAMPLE_DATA.kpis).map(([key, kpi]: any) => (
+  {Object.entries((useRemote && remoteKpis) ? remoteKpis : SAMPLE_DATA.kpis).map(([key, kpi]) => {
+    type KpiShape = { label?: string; value?: string; change?: string; trend?: string; description?: string };
+    const typedKpi = kpi as unknown as KpiShape;
+    return (
           <div
             key={key}
             className="kpi-card"
             onClick={() => onKpiClick(key)}
           >
             <div className="flex justify-between items-start mb-2">
-              <h3 className="font-semibold text-sm text-muted-foreground">{kpi.label}</h3>
-              <span className="text-lg">{getTrendIcon(kpi.trend)}</span>
+              <h3 className="font-semibold text-sm text-muted-foreground">{typedKpi.label}</h3>
+              <span className="text-lg">{getTrendIcon(typedKpi.trend ?? '')}</span>
             </div>
-            <div className={`kpi-value kpi-${kpi.trend}`}>
-              {formatValue(kpi.value)}
+            <div className={`kpi-value kpi-${typedKpi.trend}`}>
+              {formatValue(typedKpi.value ?? '')}
             </div>
             <div className="flex items-center justify-between">
-              <span className={`text-sm kpi-${kpi.trend}`}>
-                {kpi.change}
+              <span className={`text-sm kpi-${typedKpi.trend}`}>
+                {typedKpi.change}
               </span>
               <span className="text-xs text-muted-foreground">vs prior</span>
             </div>
             <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
-              {kpi.description}
+              {typedKpi.description}
             </p>
           </div>
-        ))}
+        );
+  })}
       </div>
 
       {/* Charts Row */}

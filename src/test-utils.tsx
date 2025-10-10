@@ -13,7 +13,7 @@ export function renderWithProviders(ui: React.ReactElement, { route = '/' } = {}
   );
 
   return {
-    ...render(ui, { wrapper: Wrapper as any }),
+    ...render(ui, { wrapper: Wrapper as React.ComponentType }),
     queryClient,
   };
 }

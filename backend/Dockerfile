@@ -1,23 +1,21 @@
 FROM node:20-bullseye AS build
 WORKDIR /app
-COPY backend/package.json backend/package-lock.json ./
+# Copy only package files first to leverage Docker cache
+COPY package.json package-lock.json ./
 RUN npm ci --silent
-COPY backend .
+# Copy source and build
+COPY . .
 RUN npm run build
 
 FROM node:20-slim AS runtime
 WORKDIR /app
 COPY --from=build /app/dist ./dist
-COPY backend/package.json ./
+# Copy package.json from the build image to install production deps
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/package-lock.json ./package-lock.json
 RUN npm ci --production --silent
 EXPOSE 4000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD wget -qO- http://localhost:4000/ || exit 1
-CMD ["node", "dist/index.js"]
-FROM node:20-alpine
-WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
-EXPOSE 4000
-CMD ["node", "dist/index.js"]
+# Use a Node-based healthcheck to avoid requiring wget/curl in the runtime image
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+	CMD ["sh", "-c", "node -e \"require('http').get('http://localhost:4000', res => { process.exit(res.statusCode===200?0:1); }).on('error', ()=>process.exit(1))\""]
+CMD ["node", "dist/start.js"]

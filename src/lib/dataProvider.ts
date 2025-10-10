@@ -1,53 +1,59 @@
 import { createFetcher } from "./apiClient";
 import { SAMPLE_DATA } from "../data/sampleData";
-import type { KpisResponse, FinancialsResponse, IngestResponse, ReportResponse, AssistantResponse, IngestStatus } from "../types/api";
+import type { KpisResponse, FinancialsResponse, IngestResponse, AssistantResponse } from "./validators";
+import { adaptKpis, adaptFinancials, adaptIngestion, adaptAssistant } from "./adapters";
 
 const useRemote = (import.meta.env.VITE_USE_REMOTE_API === "true");
 
 const fetchKpis = createFetcher<KpisResponse>("/kpis");
-const fetchFinancials = createFetcher<any>("/financials");
-const fetchIngestion = createFetcher<any>("/ingestion/history");
-const fetchChat = createFetcher<AssistantResponse>("/assistant/query");
+const fetchFinancials = createFetcher<unknown>("/financials");
+const fetchIngestion = createFetcher<unknown>("/ingestion/history");
+const fetchChat = createFetcher<unknown>("/assistant/query");
 
-function normalizeIngestion(run: any): IngestResponse {
+function normalizeIngestion(run: unknown): IngestResponse {
+  const r = run as Record<string, unknown>;
   return {
-    runId: run.runId || run.id || `RUN-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
-    status: run.status || run.state || 'completed',
-    fileName: run.fileName || run.name || (run.file && run.file.name) || 'unknown',
-    createdAt: run.createdAt || run.uploadDate || run.uploadedAt || new Date().toISOString(),
-    fileSize: run.fileSize || run.size || (run.file && run.file.size) || undefined,
-    processingTime: run.processingTime || run.duration || undefined,
+    runId: String(r['runId'] ?? r['id'] ?? `RUN-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`),
+    status: String(r['status'] ?? r['state'] ?? 'completed'),
+    fileName: String(r['fileName'] ?? r['name'] ?? (r['file'] && (r['file'] as Record<string, unknown>)['name']) ?? 'unknown'),
+    createdAt: String(r['createdAt'] ?? r['uploadDate'] ?? r['uploadedAt'] ?? new Date().toISOString()),
+    fileSize: (r['fileSize'] ?? r['size'] ?? (r['file'] && (r['file'] as Record<string, unknown>)['size']) ?? undefined) as string | number | undefined,
+    processingTime: (r['processingTime'] ?? r['duration'] ?? undefined) as string | number | undefined,
   } as IngestResponse;
 }
 
-function normalizeFinancials(apiResponse: any): FinancialsResponse {
-  if (!apiResponse) return {} as FinancialsResponse;
-  if (apiResponse.monthly) return apiResponse as FinancialsResponse;
-  return {
-    monthly: apiResponse.series || apiResponse.monthly || [],
-    ...apiResponse,
-  } as FinancialsResponse;
+function normalizeFinancials(apiResponse: unknown): FinancialsResponse {
+  if (!apiResponse) return [] as FinancialsResponse;
+  if (Array.isArray(apiResponse)) return apiResponse as FinancialsResponse;
+  const r = apiResponse as Record<string, unknown> | undefined;
+  if (r?.monthly) return r.monthly as unknown as FinancialsResponse;
+  const candidate = r?.series ?? r?.monthly ?? [];
+  return (candidate as unknown) as FinancialsResponse;
 }
 
 export async function getKpis(): Promise<KpisResponse> {
   if (!useRemote) return (SAMPLE_DATA.kpis ?? {}) as KpisResponse;
-  return fetchKpis();
+  const raw = await fetchKpis();
+  return adaptKpis(raw);
 }
 
 export async function getFinancials(): Promise<FinancialsResponse> {
   if (!useRemote) return (SAMPLE_DATA.financials ?? {}) as FinancialsResponse;
   const raw = await fetchFinancials();
-  return normalizeFinancials(raw);
+  const financials = adaptFinancials(raw);
+  return financials;
 }
 
 export async function getIngestionHistory(): Promise<IngestResponse[]> {
-  if (!useRemote) return (SAMPLE_DATA.ingestionHistory ?? []) as IngestResponse[];
+  if (!useRemote) return (SAMPLE_DATA.ingestionHistory ?? []) as unknown as IngestResponse[];
   const raw = await fetchIngestion();
-  return (raw || []).map(normalizeIngestion);
+  const arr = (Array.isArray(raw) ? raw : []) as unknown[];
+  return arr.map((r) => adaptIngestion(r));
 }
 
 export async function getChatResponse(query: string): Promise<AssistantResponse> {
   if (!useRemote) return { text: SAMPLE_DATA.chatResponses?.[query] ?? SAMPLE_DATA.chatResponses?.default ?? `Echo: ${query}` } as AssistantResponse;
-  return fetchChat({ query } as any);
+  const raw = await fetchChat({ query } as Record<string, unknown>);
+  return adaptAssistant(raw);
 }
 

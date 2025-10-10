@@ -1,6 +1,7 @@
 import React from 'react';
 // Ensure the runtime shim indicates remote API usage for this test
-(globalThis as any).__VITE_USE_REMOTE_API = 'true';
+// set runtime shim in a type-safe way
+Object.defineProperty(globalThis, '__VITE_USE_REMOTE_API', { value: 'true', configurable: true });
 
 import { renderWithProviders, userEvent, flushPromises } from '@/test-utils';
 import { screen, waitFor } from '@testing-library/react';
@@ -33,11 +34,12 @@ describe('ReportViewer', () => {
     const clickSpy = jest.fn();
     const origCreate = document.createElement.bind(document);
     jest.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
-      const el = origCreate(tagName as any) as HTMLAnchorElement;
+      const el = origCreate(tagName) as HTMLElement;
       if (tagName === 'a') {
-        el.click = clickSpy as any;
+        // ensure click exists and is the spy
+        (el as HTMLAnchorElement).click = clickSpy;
       }
-      return el as any;
+      return el;
     });
 
     renderWithProviders(<ReportViewer />);

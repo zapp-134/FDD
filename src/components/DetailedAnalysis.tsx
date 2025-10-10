@@ -11,12 +11,13 @@ export const DetailedAnalysis = () => {
   const [selectedYear, setSelectedYear] = useState(2024);
   const useRemote = (import.meta.env.VITE_USE_REMOTE_API === 'true');
   const { data: remoteFinancials, error } = useFinancials();
-  const [financials, setFinancials] = useState<FinancialsResponse>(SAMPLE_DATA.financials as any);
+  const [financials, setFinancials] = useState<FinancialsResponse>(SAMPLE_DATA.financials as unknown as FinancialsResponse);
 
   useEffect(() => {
     if (!useRemote) return;
     if (error) {
-      toast({ title: 'Failed to load financials', description: String((error as any)?.message ?? error) });
+      const msg = error instanceof Error ? error.message : String(error);
+      toast({ title: 'Failed to load financials', description: msg });
       return;
     }
     if (remoteFinancials) {

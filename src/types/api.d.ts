@@ -1,32 +1,26 @@
 export interface KpisResponse {
-	totalUsers?: number;
+	revenue: number;
+	growth?: number;
 	activeUsers?: number;
-	revenue?: number;
-	[key: string]: any;
 }
 
-export interface FinancialsResponse {
-	monthly?: Array<{ month: string; revenue: number; expenses: number }>;
-	[key: string]: any;
-}
+export type FinancialsResponse = Array<{ date: string; revenue: number; cost: number; profit: number }>;
 
 export interface IngestResponse {
-	runId: string;
-	status: 'queued' | 'processing' | 'completed' | 'error' | 'failed';
-	fileName: string;
-	createdAt?: string;
-	fileSize?: string;
-	processingTime?: string;
-	[key: string]: any;
+  runId: string;
+  status?: string;
+  fileName?: string;
+  createdAt?: string;
+  fileSize?: string | number;
+  processingTime?: number;
 }
 
 export type IngestStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'error';
 
 export interface ReportResponse {
-	reportId: string;
-	downloadUrl?: string;
-	status?: string;
-	[key: string]: any;
+  reportId: string;
+  downloadUrl?: string;
+  status?: string;
 }
 
 export interface ReportStatus {
@@ -38,5 +32,4 @@ export interface ReportStatus {
 
 export interface AssistantResponse {
 	text: string;
-	[key: string]: any;
 }

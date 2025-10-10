@@ -69,13 +69,14 @@ export const ChatWidget = () => {
           const res: AssistantResponse = await getChatResponse(inputText);
           const assistantMessage: Message = {
             id: (Date.now() + 1).toString(),
-            text: (res.text ?? String(res)) as string,
+            text: res?.text ?? String(res ?? ''),
             sender: 'assistant',
             timestamp: new Date()
           };
           setMessages(prev => [...prev, assistantMessage]);
-        } catch (err: any) {
-          toast({ title: 'Failed to get assistant response', description: String(err?.message ?? err) });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err ?? 'Unknown error');
+          toast({ title: 'Failed to get assistant response', description: message });
           // fallback to local response
           const response = findRelevantResponse(inputText);
           const assistantMessage: Message = {

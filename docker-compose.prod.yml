@@ -1,0 +1,10 @@
+services:
+  frontend:
+    image: fdd-frontend:local
+    ports:
+      - "5173:80"
+
+  backend:
+    image: fdd-backend:local
+    ports:
+      - "4000:4000"

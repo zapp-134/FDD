@@ -10,8 +10,11 @@ export const api = axios.create({
 });
 
 export function createFetcher<T>(path: string, opts?: AxiosRequestConfig) {
-  return async (params?: Record<string, any>): Promise<T> => {
-    const config: AxiosRequestConfig = { params, ...(opts || {}) };
+  return async (params?: Record<string, unknown>): Promise<T> => {
+    // Axios' params typing can be permissive; we keep a single small cast here
+    // to avoid sprinkling `any` throughout call sites.
+    const toAxiosParams = (p?: Record<string, unknown>) => p as unknown;
+    const config: AxiosRequestConfig = { params: toAxiosParams(params), ...(opts || {}) };
     const res = await api.get<T>(path, config);
     return res.data;
   };

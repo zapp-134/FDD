@@ -13,13 +13,19 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "mock": "node ./dev/mock-server/index.js",
-    "test": "jest --passWithNoTests"
-    ,"sonar:scan": "sonar-scanner"
-    ,"zap:scan": "zap-baseline.py -t http://localhost:5173 -r zap_report.html"
+    "test": "jest --passWithNoTests",
+    "sonar:scan": "sonar-scanner",
+    "zap:scan": "zap-baseline.py -t http://localhost:5173 -r zap_report.html",
+    "docker:build:frontend": "docker build -f docker/frontend.Dockerfile -t fdd-frontend:local .",
+    "docker:build:backend": "docker build -f docker/backend.Dockerfile -t fdd-backend:local .",
+    "docker:compose:prod": "docker compose -f docker-compose.prod.yml up --build -d",
+    "docker:compose:dev": "docker compose -f docker-compose.dev.yml up --build",
+  "smoke:prod": "node ./scripts/smoke.cjs",
+  "smoke:dev": "node ./scripts/smoke.cjs",
+    "test:backend": "(cd backend && npm test)"
+    
+    
   },
-  "test:backend": "(cd backend && npm test)",
-  "docker:up": "docker-compose up --build",
-  "docker:down": "docker-compose down",
   "husky": {
     "hooks": {}
   },

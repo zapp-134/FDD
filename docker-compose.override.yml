@@ -1,4 +1,3 @@
-version: '3.8'
 # Development override: mount source for faster iteration
 services:
   frontend:
