@@ -1,0 +1,50 @@
+name: CI Smoke Test
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+
+jobs:
+  smoke:
+    name: Smoke (deterministic)
+    runs-on: windows-latest
+    env:
+      FORCE_SIMULATE_GEMINI_TRANSIENTS: 'true'
+      USE_ML_CLIENT_MOCK: 'true'
+      # Use a dummy key here; do NOT expose real credentials in the workflow file.
+      GEMINI_API_KEY: 'test-key'
+      NODE_OPTIONS: '--max-old-space-size=2048'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Build backend (tsc)
+        run: npm run build
+        working-directory: backend
+
+      - name: Run smoke script (PowerShell)
+        shell: pwsh
+        run: |
+          Write-Host "Running deterministic smoke via backend/scripts/run-smoke.ps1"
+          Set-Location -Path "$GITHUB_WORKSPACE/backend"
+          # Ensure script is executable and run it with ForceSimulate and UseMock
+          ./scripts/run-smoke.ps1 -ForceSimulate -UseMock
+
+      - name: Upload artifacts (reports)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-reports
+          path: backend/reports/
