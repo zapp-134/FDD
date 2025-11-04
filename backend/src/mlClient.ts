@@ -252,24 +252,54 @@ async function callGeminiAPI(jobId: string, docText: string, topK: number): Prom
   } catch (e) {
     // ignore
   }
-  // Optional transient simulation for local dev/testing. When enabled this
-  // will randomly throw a simulated 503 once per process so we can validate
-  // retry/fallback behavior in live containers. Only active when
-  // SIMULATE_GEMINI_TRANSIENTS=true and NODE_ENV !== 'production'.
+  // Optional transient simulation for local dev/testing. Two modes supported:
+  // 1) SIMULATE_GEMINI_TRANSIENTS=true -> randomly simulate a single transient 503 once per process
+  // 2) FORCE_SIMULATE_GEMINI_TRANSIENTS=true -> deterministically simulate a single transient 503 once per jobId
+  // Both modes are only active when NODE_ENV !== 'production'. Keep behavior limited so retries can exercise fallback logic.
   try {
-    if ((process.env.SIMULATE_GEMINI_TRANSIENTS || '').toLowerCase() === 'true' && (process.env.NODE_ENV || '').toLowerCase() !== 'production') {
-      // simulate at most once per process to avoid flapping
-      if (!(global as any).__simulated_gemini_transient__) {
-        // 50% chance to simulate — random but deterministic enough for testing
-        if (Math.random() < 0.5) {
-          (global as any).__simulated_gemini_transient__ = true;
-          console.warn('Simulated transient 503 (SIMULATE_GEMINI_TRANSIENTS=true)');
-          const se: any = new Error('Simulated transient 503');
-          se.response = { status: 503, data: 'Simulated transient 503' };
+    const nodeEnv = (process.env.NODE_ENV || '').toLowerCase();
+    // Module-scoped marker for job-level deterministic simulation. Use a Map to
+    // track how many times we've simulated for a given job so we can simulate
+    // a single transient and then return a mocked successful response (so
+    // retry/fallback flow can be exercised deterministically without calling
+    // the real Gemini API with test keys).
+    (global as any).__force_simulated_gemini_jobs__ = (global as any).__force_simulated_gemini_jobs__ || new Map<string, number>();
+    if (nodeEnv !== 'production') {
+      if ((process.env.FORCE_SIMULATE_GEMINI_TRANSIENTS || '').toLowerCase() === 'true') {
+        const seen: Map<string, number> = (global as any).__force_simulated_gemini_jobs__;
+        const cnt = seen.get(jobId) || 0;
+        if (cnt === 0) {
+          // First call for this job -> simulate a transient 503
+          seen.set(jobId, 1);
+          console.warn(`Deterministic simulated transient 503 for job ${jobId} (FORCE_SIMULATE_GEMINI_TRANSIENTS=true)`);
+          const se: any = new Error('Simulated transient 503 (forced)');
+          se.response = { status: 503, data: 'Simulated transient 503 (forced)' };
           throw se;
         }
-        // mark even when we decide not to simulate so subsequent calls won't simulate again
-        (global as any).__simulated_gemini_transient__ = true;
+        if (cnt === 1) {
+          // Second call for this job -> return a mocked successful Gemini-like response
+          seen.set(jobId, 2);
+          console.info(`Deterministic simulated Gemini success for job ${jobId} (FORCE_SIMULATE_GEMINI_TRANSIENTS=true)`);
+          // Return a shape that extractTextFromGemini can handle. Provide JSON string in candidates[0].content
+          return {
+            candidates: [ { content: JSON.stringify({ report: { runId: jobId, createdAt: new Date().toISOString(), summary: 'Simulated report' }, analysis: { sections: [] } }) } ]
+          };
+        }
+        // If >1, fall through to actual network call
+      } else if ((process.env.SIMULATE_GEMINI_TRANSIENTS || '').toLowerCase() === 'true') {
+        // simulate at most once per process to avoid flapping
+        if (!(global as any).__simulated_gemini_transient__) {
+          // 50% chance to simulate
+          if (Math.random() < 0.5) {
+            (global as any).__simulated_gemini_transient__ = true;
+            console.warn('Simulated transient 503 (SIMULATE_GEMINI_TRANSIENTS=true)');
+            const se: any = new Error('Simulated transient 503');
+            se.response = { status: 503, data: 'Simulated transient 503' };
+            throw se;
+          }
+          // mark even when we decide not to simulate so subsequent calls won't simulate again
+          (global as any).__simulated_gemini_transient__ = true;
+        }
       }
     }
     const resp = await axios.post(url, geminiPayload, { headers, timeout: 60000 });
