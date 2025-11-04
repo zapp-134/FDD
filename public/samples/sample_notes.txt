@@ -1,0 +1,10 @@
+# LABELED_BY_TOOL
+# File: public/samples/sample_notes.txt
+# Inferred role: Public static asset
+# Note: auto-generated label. Please edit the file for a more accurate description.
+
+These are brief notes for testing the upload endpoint and chat assistant.
+- Confirm parsing of bullet lists
+- Confirm that report references are preserved
+Sample notes removed
+This file previously contained demo notes for the sample dataset. Demo content has been removed.

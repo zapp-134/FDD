@@ -1,0 +1,15 @@
+{
+  "runId": "3a55e64f-afd2-46d5-9a54-ee6b7492af69",
+  "createdAt": "2025-10-13T14:46:23.624Z",
+  "completedAt": "2025-10-13T14:46:25.594Z",
+  "summary": "Generated report for job 3a55e64f-afd2-46d5-9a54-ee6b7492af69",
+  "kpis": {
+    "revenue": "$1.21M",
+    "ebitda": "$0.58M"
+  },
+  "redFlags": [],
+  "trends": [],
+  "files": [
+    "1760366783592-ed1f7ffd-7c86-408a-b951-96e31f28b2a5-sample_financial_data.csv"
+  ]
+}

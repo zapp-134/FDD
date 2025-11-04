@@ -1,0 +1,98 @@
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+pnpm-lock.yaml
+*.tgz
+
+# TypeScript / build
+dist/
+build/
+out/
+/.cache
+
+# Vite / React
+/public/build/
+/.vite/
+
+# Environment
+.env
+.env.*
+secrets/
+
+# Docker
+docker-compose.override.yml
+docker-compose.*.yml
+**/Dockerfile
+*.log
+
+# Python
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.eggs/
+dist-packages/
+
+# ML service artifacts
+ml_service/__pycache__/
+ml_service/*.pyc
+ml_service/.venv/
+
+# App-specific
+uploads/
+data/
+backend/data/
+backend/dist/
+frontend/dist/
+frontend/node_modules/
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS
+ehthumbs.db
+Icon?
+Desktop.ini
+
+# Logs
+logs/
+*.log
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

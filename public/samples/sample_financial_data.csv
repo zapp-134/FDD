@@ -1,0 +1,6 @@
+Date,Account,Description,Amount,Customer
+2024-01-05,Sales,Product A sale,1200.00,Customer A
+2024-01-12,Sales,Product B sale,850.00,Customer B
+2024-02-02,Expense,Office supplies,-75.20,Supplier X
+2024-02-15,Sales,Product A sale,1300.00,Customer C
+2024-03-01,Payment,Customer A payment,-1200.00,Customer A

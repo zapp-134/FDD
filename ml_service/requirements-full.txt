@@ -1,0 +1,15 @@
+# LABELED_BY_TOOL
+# File: ml_service/requirements-full.txt
+# Inferred role: Project file — please open to see specific role
+# Note: auto-generated label. Please edit the file for a more accurate description.
+
+fastapi==0.99.1
+uvicorn[standard]==0.22.0
+pandas==2.2.3
+python-multipart==0.0.6
+numpy==1.26.4
+faiss-cpu==1.7.4
+sentence-transformers==2.2.2
+transformers==4.34.0
+torch==2.2.2
+python-dotenv==1.0.0
