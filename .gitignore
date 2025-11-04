@@ -106,3 +106,11 @@ keys/*.p12
 keys/*.crt
 keys/*.der
 keys/*.pem
+
+# Generated or large ML artifacts
+ml_service/index/
+ml_service/index/*
+
+# Runtime DBs and generated reports
+backend/jobs.db
+backend/reports/
