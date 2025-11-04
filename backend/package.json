@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "ts-node --esm src/ingest.ts",
-    "start": "node dist/ingest.js",
-    "build": "tsc -p .",
-    "test": "jest --runInBand"
+  "dev": "ts-node --esm src/ingest.ts",
+  "start": "node dist/ingest.js",
+  "build": "tsc -p .",
+  "test": "jest --runInBand",
+  "smoke": "tsc && node dist/ingest.js"
   },
   "dependencies": {
   "sqlite3": "^5.1.6",
