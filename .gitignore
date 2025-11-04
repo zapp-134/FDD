@@ -96,3 +96,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets - ignore entire keys folder and any key files
+keys/
+keys/*.json
+keys/*.pem
+keys/*.key
+keys/*.p12
+keys/*.crt
+keys/*.der
+keys/*.pem
