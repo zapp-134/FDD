@@ -1,0 +1,6 @@
+Company B — Notes
+- HQ: Austin, TX
+- Business: small retail chain analytics
+- Contact: finance@companyb.example
+
+Files include receipts and transaction summaries for testing ingest.

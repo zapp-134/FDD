@@ -1,0 +1,6 @@
+Company A — Notes
+- HQ: Seattle, WA
+- Primary vertical: fintech data processing
+- Contact: ops@companya.example
+
+Upload guidance: CSVs should include header row and use comma delimiter.

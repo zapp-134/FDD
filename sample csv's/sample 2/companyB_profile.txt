@@ -1,0 +1,6 @@
+Company B Profile
+Name: Company B Ltd
+Industry: Retail Analytics
+Employees: 18
+Currency: USD
+Notes: Test data includes receipts and small sales transactions.

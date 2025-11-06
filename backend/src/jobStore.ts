@@ -3,25 +3,27 @@
  * Inferred role: Backend project file (server)
  * Note: auto-generated label. Please edit the file for a more accurate description. */
 
-import sqlite3 from 'sqlite3';
+/*
+ * Lightweight file-backed job store used for local/dev and container runs.
+ * Replaces the sqlite-backed store to avoid native build issues inside lightweight
+ * containers. If you prefer sqlite in production, set USE_SQLITE=true and ensure
+ * the native module is built for your platform.
+ */
+import fs from 'fs';
 import path from 'path';
 
-const DB_PATH = path.join(__dirname, '..', 'jobs.db');
-const db = new sqlite3.Database(DB_PATH);
+const ROOT = path.resolve(__dirname, '..');
+const JOBS_FILE = path.join(ROOT, 'jobs.json');
 
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS jobs (
-    jobId TEXT PRIMARY KEY,
-    files TEXT,
-    status TEXT,
-    progress INTEGER,
-    createdAt TEXT,
-    updatedAt TEXT,
-    startedAt TEXT,
-    completedAt TEXT,
-    error TEXT
-  )`);
-});
+function ensureJobsFile() {
+  try {
+    if (!fs.existsSync(JOBS_FILE)) fs.writeFileSync(JOBS_FILE, JSON.stringify({ jobs: [] }, null, 2), 'utf8');
+  } catch (e) {
+    // ignore
+  }
+}
+
+ensureJobsFile();
 
 export interface Job {
   jobId: string;
@@ -34,53 +36,59 @@ export interface Job {
   completedAt?: string;
   error?: string;
 }
-
 export function addJob(job: Job): Promise<void> {
   return new Promise((resolve, reject) => {
-    db.run(`INSERT INTO jobs (jobId, files, status, progress, createdAt, updatedAt, startedAt, completedAt, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      job.jobId, JSON.stringify(job.files), job.status, job.progress, job.createdAt, job.updatedAt, job.startedAt || null, job.completedAt || null, job.error || null,
-      function (err: any) {
-        if (err) return reject(err);
-        resolve();
-      });
+    try {
+      ensureJobsFile();
+      const raw = fs.readFileSync(JOBS_FILE, 'utf8');
+      const parsed = JSON.parse(raw || '{"jobs":[]}');
+      parsed.jobs = parsed.jobs || [];
+      parsed.jobs.push(job);
+      fs.writeFileSync(JOBS_FILE, JSON.stringify(parsed, null, 2), 'utf8');
+      try { console.info(`jobStore.addJob: added job ${job.jobId} (${job.files?.length || 0} files)`); } catch (_) {}
+      resolve();
+    } catch (e) {
+      reject(e);
+    }
   });
 }
 
 export function updateJob(job: Job) {
-  db.run(`UPDATE jobs SET files=?, status=?, progress=?, createdAt=?, updatedAt=?, startedAt=?, completedAt=?, error=? WHERE jobId=?`,
-    JSON.stringify(job.files), job.status, job.progress, job.createdAt, job.updatedAt, job.startedAt || null, job.completedAt || null, job.error || null, job.jobId);
+  try {
+    ensureJobsFile();
+    const raw = fs.readFileSync(JOBS_FILE, 'utf8');
+    const parsed = JSON.parse(raw || '{"jobs":[]}');
+    parsed.jobs = parsed.jobs || [];
+    const idx = parsed.jobs.findIndex((j: any) => j.jobId === job.jobId);
+    if (idx === -1) parsed.jobs.push(job);
+    else parsed.jobs[idx] = job;
+    fs.writeFileSync(JOBS_FILE, JSON.stringify(parsed, null, 2), 'utf8');
+    try { console.info(`jobStore.updateJob: updated job ${job.jobId} status=${job.status} progress=${job.progress}`); } catch (_) {}
+  } catch (e) {
+    // ignore write errors
+  }
 }
 
 export function getJob(jobId: string, cb: (job?: Job) => void) {
-  db.get('SELECT * FROM jobs WHERE jobId=?', jobId, (err: any, row: any) => {
-    if (err || !row) return cb(undefined);
-    cb({
-      jobId: row.jobId,
-      files: JSON.parse(row.files),
-      status: row.status,
-      progress: row.progress,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      startedAt: row.startedAt || undefined,
-      completedAt: row.completedAt || undefined,
-      error: row.error || undefined,
-    });
-  });
+  try {
+    ensureJobsFile();
+    const raw = fs.readFileSync(JOBS_FILE, 'utf8');
+    const parsed = JSON.parse(raw || '{"jobs":[]}');
+    const found = (parsed.jobs || []).find((j: any) => j.jobId === jobId);
+    if (!found) return cb(undefined);
+    cb(found as Job);
+  } catch (e) {
+    return cb(undefined);
+  }
 }
 
 export function getAllJobs(cb: (jobs: Job[]) => void) {
-  db.all('SELECT * FROM jobs', (err: any, rows: any[]) => {
-    if (err) return cb([]);
-    cb(rows.map((row: any) => ({
-      jobId: row.jobId,
-      files: JSON.parse(row.files),
-      status: row.status,
-      progress: row.progress,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      startedAt: row.startedAt || undefined,
-      completedAt: row.completedAt || undefined,
-      error: row.error || undefined,
-    })));
-  });
+  try {
+    ensureJobsFile();
+    const raw = fs.readFileSync(JOBS_FILE, 'utf8');
+    const parsed = JSON.parse(raw || '{"jobs":[]}');
+    cb(parsed.jobs || []);
+  } catch (e) {
+    cb([]);
+  }
 }

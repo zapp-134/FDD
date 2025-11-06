@@ -184,12 +184,56 @@ export const ReportViewer = ({ runId }: ReportViewerProps) => {
           <CollapsibleContent>
             <CardContent>
               <p className="text-muted-foreground leading-relaxed">{reportData.summary}</p>
-              <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">{(() => { const k=(reportData as any).analysis.kpis||{}; const items=[{label:'Revenue',value:k.revenue_total||k.revenue||'$0'},{label:'Expenses',value:k.expenses_total||'-'},{label:'EBITDA',value:k.ebitda_total||k.ebitda||'-'},{label:'Gross margin',value:k.gross_margin_pct||'-'},{label:'AR days',value:k.ar_days||'-'},{label:'Cash runway',value:k.cash_runway||'-'}]; return items.map(it=>(<div key={it.label} className="text-center p-3 bg-muted rounded-lg"><p className="text-sm text-muted-foreground">{it.label}</p><p className="text-lg font-semibold">{it.value}</p></div>)); })()}</div>
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">{(() => {
+                const k=(reportData as any).analysis.kpis||{};
+                const formatVal = (v:any) => {
+                  if (v == null) return '-';
+                  if (typeof v === 'number') return `$${v.toFixed(2)}`;
+                  const s = String(v).trim();
+                  if (s === '') return '-';
+                  // already formatted
+                  if (s.startsWith('$') || s.endsWith('%') || /days|months|day|month/i.test(s)) return s;
+                  // try coerce numeric
+                  const num = parseFloat(s.replace(/[^0-9\-\.]/g, ''));
+                  if (!Number.isNaN(num)) return `$${num.toFixed(2)}`;
+                  return s;
+                };
+
+                const pick = (candidates:string[]) => {
+                  for (const key of candidates) {
+                    if (k[key] !== undefined && k[key] !== null) return formatVal(k[key]);
+                  }
+                  return '-';
+                };
+
+                const items = [
+                  { label: 'Revenue', value: pick(['revenue_total_local','revenue_total','revenue','total_revenue','total_amount']) },
+                  { label: 'Expenses', value: pick(['expenses_total_local','expenses_total','expenses','total_expenses']) },
+                  { label: 'EBITDA', value: pick(['ebitda_total_local','ebitda_total','ebitda']) },
+                  { label: 'Gross margin', value: pick(['gross_margin_pct_local','gross_margin_pct']) },
+                  { label: 'AR days', value: pick(['ar_days']) },
+                  { label: 'Cash runway', value: pick(['cash_runway']) },
+                ];
+                const isEmpty = (v:any) => {
+                  if (v == null) return true;
+                  const s = String(v).trim();
+                  if (s === '-' || s === '') return true;
+                  // consider $0 or $0.00 as empty
+                  if (/^\$0(?:\.0+)?$/.test(s)) return true;
+                  // numeric zero
+                  const n = Number(s.replace(/[^0-9\-\.]/g, ''));
+                  if (!Number.isNaN(n) && n === 0) return true;
+                  return false;
+                };
+                const filtered = items.filter(it => !isEmpty(it.value));
+                if (filtered.length === 0) return null;
+                return filtered.map(it=>(<div key={it.label} className="text-center p-3 bg-muted rounded-lg"><p className="text-sm text-muted-foreground">{it.label}</p><p className="text-lg font-semibold">{it.value}</p></div>));
+              })()}</div>
               {(() => { const k=(reportData as any).analysis.kpis||{}; if(!k.cash_runway||k.cash_runway==='-') return <p className="mt-2 text-xs text-muted-foreground">Hint: Upload a cash/balance file to compute cash runway.</p>; return null; })()}
               {(reportData as any).analysis.kpis?.per_file?.length>0 && (
                 <div className="mt-6"><h4 className="text-lg font-medium mb-2">Per-file KPIs</h4><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-muted-foreground"><th className="pr-4">File</th><th className="pr-4">Revenue</th><th className="pr-4">Expenses</th><th className="pr-4">EBITDA</th></tr></thead><tbody>{(reportData as any).analysis.kpis.per_file.map((row:any,idx:number)=>(<tr key={idx} className="border-t"><td className="pr-4 py-2">{row.file}</td><td className="pr-4 py-2">${(row.revenue||0).toFixed(2)}</td><td className="pr-4 py-2">${(row.expenses||0).toFixed(2)}</td><td className="pr-4 py-2">${(row.ebitda||0).toFixed(2)}</td></tr>))}</tbody></table></div></div>
               )}
-              {(() => { const k=(reportData as any).analysis.kpis||{}; const hide=new Set<string>(['per_file','revenue','expenses','ebitda','revenue_total','expenses_total','ebitda_total','gross_margin_pct','ar_days','cash_runway']); Object.keys(k).forEach(key=>{ if(key.endsWith('_local')) hide.add(key); }); ['total_amount_per_file','files_processed','potential_duplicate_files','transactions_per_file','total_reported_amount_all_files','average_transaction_amount'].forEach(noisy=>hide.add(noisy)); const entries=Object.entries(k).filter(([key,val])=>!hide.has(key)&&(typeof val==='string'||typeof val==='number')).map(([key,val])=>({key,label:key.replace(/_/g,' '),value:val})); if(entries.length===0) return null; return (<div className="mt-6"><h4 className="text-sm font-medium mb-2 text-muted-foreground">Other metrics</h4><div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">{entries.map(e=>(<div key={e.key} className="text-center p-4 bg-muted rounded-lg"><p className="text-xs text-muted-foreground">{e.label}</p><p className="text-sm font-semibold">{String(e.value)}</p></div>))}</div><div className="mt-3"><Button variant="ghost" size="sm" onClick={() => setShowRaw(s=>!s)}>{showRaw? 'Hide raw':'Show raw JSON'}</Button></div></div>); })()}
+              {(() => { const k=(reportData as any).analysis.kpis||{}; const hide=new Set<string>(['per_file','revenue','expenses','ebitda','revenue_total','expenses_total','ebitda_total','gross_margin_pct','ar_days','cash_runway','summary']); Object.keys(k).forEach(key=>{ if(key.endsWith('_local')) hide.add(key); }); ['total_amount_per_file','files_processed','potential_duplicate_files','transactions_per_file','total_reported_amount_all_files','average_transaction_amount'].forEach(noisy=>hide.add(noisy)); const entries=Object.entries(k).filter(([key,val])=>!hide.has(key)&&(typeof val==='string'||typeof val==='number')).map(([key,val])=>({key,label:key.replace(/_/g,' '),value:val})); if(entries.length===0) return null; return (<div className="mt-6"><h4 className="text-sm font-medium mb-2 text-muted-foreground">Other metrics</h4><div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">{entries.map(e=>(<div key={e.key} className="text-center p-4 bg-muted rounded-lg"><p className="text-xs text-muted-foreground">{e.label}</p><p className="text-sm font-semibold">{String(e.value)}</p></div>))}</div><div className="mt-3"><Button variant="ghost" size="sm" onClick={() => setShowRaw(s=>!s)}>{showRaw? 'Hide raw':'Show raw JSON'}</Button></div></div>); })()}
               {showRaw && (reportData as any).__rawReportOriginal && (<div className="mt-4 p-3 bg-black/5 rounded text-xs font-mono whitespace-pre-wrap"><strong>Raw / Parsed payload:</strong><pre className="mt-2 max-h-64 overflow-auto">{JSON.stringify((reportData as any).__rawReportParsed || (reportData as any).__rawReportOriginal,null,2)}</pre></div>)}
             </CardContent>
           </CollapsibleContent>

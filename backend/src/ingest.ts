@@ -45,6 +45,35 @@ interface Analysis {
   insights: string[];
 }
 
+// Helper: load a job record reliably. First attempt getJob (in-memory callback),
+// then fallback to reading JOBS_FILE on disk. Returns null if not found.
+function loadJobRecord(jobId: string): Promise<Job | null> {
+  return new Promise((resolve) => {
+    try {
+      getJob(jobId, (j) => {
+        if (j) return resolve(j as Job);
+        try {
+          const raw = fs.readFileSync(JOBS_FILE, 'utf8');
+          const parsed = JSON.parse(raw || '{"jobs":[]}');
+          const found = (parsed.jobs || []).find((x: any) => x.jobId === jobId);
+          return resolve(found || null);
+        } catch (e) {
+          return resolve(null);
+        }
+      });
+    } catch (e) {
+      try {
+        const raw = fs.readFileSync(JOBS_FILE, 'utf8');
+        const parsed = JSON.parse(raw || '{"jobs":[]}');
+        const found = (parsed.jobs || []).find((x: any) => x.jobId === jobId);
+        return resolve(found || null);
+      } catch (er) {
+        return resolve(null);
+      }
+    }
+  });
+}
+
 // Paths (computed relative to this file)
 // Use __dirname to compute the backend root reliably regardless of current working directory.
 const ROOT = path.resolve(__dirname, '..');
@@ -384,8 +413,9 @@ app.post('/api/ingest', upload.array('files', 20), async (req, res, next) => {
     await addJob(job);
 
   // Trigger async processing (non-blocking)
-  // Start background processing for this job
-  processJob(jobId);
+  // Start background processing for this job — pass the job object to avoid races
+  // where the job record might not be available later via the job store.
+  processJob(job);
 
     // Also call external ML microservice to process and index the file (non-blocking)
     const absPath = path.join(UPLOADS, filenames[0]);
@@ -529,15 +559,54 @@ app.get('/api/reports/:jobId', async (req, res) => {
   if (!fs.existsSync(p)) return res.status(404).json({ error: 'Report not found' });
 
   try {
-    const raw = await fs.promises.readFile(p, 'utf8');
+    let raw = await fs.promises.readFile(p, 'utf8');
+    // Best-effort: if the stored report JSON is missing `files`, merge from the
+    // job record on disk/runtime so the UI always sees Source Documents. This
+    // handles race conditions where the report was written before the job
+    // record was fully persisted or available in the in-memory store.
+    try {
+      let parsedMaybe: any = null;
+      try { parsedMaybe = JSON.parse(raw); } catch (e) { parsedMaybe = null; }
+      if (parsedMaybe && typeof parsedMaybe === 'object') {
+        const jobRec = await loadJobRecord(req.params.jobId);
+        if (jobRec && Array.isArray(jobRec.files) && jobRec.files.length && (!Array.isArray(parsedMaybe.files) || parsedMaybe.files.length === 0)) {
+          parsedMaybe.files = jobRec.files.slice();
+          try {
+            await fs.promises.writeFile(p, JSON.stringify(parsedMaybe, null, 2), 'utf8');
+            raw = JSON.stringify(parsedMaybe, null, 2);
+          } catch (e) {
+            // non-fatal: continue with in-memory merged value
+            raw = JSON.stringify(parsedMaybe, null, 2);
+          }
+        }
+      }
+    } catch (e) {
+      // non-fatal — serving the original raw text is acceptable
+    }
     // Helper: merge local KPIs/flags for historical wrapper files and persist canonical JSON
     const finalizeAndMaybePersist = async (repIn: any) => {
       try {
         const jobId = req.params.jobId;
         // Merge local KPIs/flags if we can load the job and its files
-        await new Promise<void>((resolve) => {
+          await new Promise<void>((resolve) => {
           getJob(jobId, async (job) => {
             try {
+              // If the lightweight job store couldn't find the job (rare),
+              // attempt a direct file-based fallback to ensure we can merge
+              // source filenames into historical reports. This prevents the
+              // UI from showing "no documents provided" when the job exists
+              // on disk but the in-memory callback missed it.
+              if (!job) {
+                try {
+                  const jfRaw = fs.readFileSync(JOBS_FILE, 'utf8');
+                  const jfParsed = JSON.parse(jfRaw || '{"jobs":[]}');
+                  const found = (jfParsed.jobs || []).find((j: any) => j.jobId === jobId);
+                  if (found) job = found as any;
+                } catch (e) {
+                  // non-fatal; leave job undefined
+                }
+              }
+
               const rep = repIn || {};
               // normalize shapes
               rep.kpis = rep.kpis || {};
@@ -717,6 +786,112 @@ app.get('/api/analysis/:jobId', async (req, res) => {
   res.sendFile(p);
 });
 
+// POST /api/reprocess/:jobId
+// Trigger a local re-generation of the report for a given job using the
+// deterministic local report generator. This is useful for repairing reports
+// that previously failed due to empty ML output or other transient issues.
+app.post('/api/reprocess/:jobId', async (req, res, next) => {
+  const { jobId } = req.params;
+  try {
+    console.info(`reprocess: requested for job ${jobId}`);
+    let job = await loadJobRecord(jobId);
+    // If the job record is missing (historical report-only artifact), attempt to
+    // recover the list of files from the existing report JSON on disk so we can
+    // still reprocess without an in-memory job entry.
+    if (!job) {
+      try {
+        const rp = path.join(REPORTS, `report_${jobId}.json`);
+        console.info('reprocess: attempting report fallback path=', rp);
+        if (fs.existsSync(rp)) {
+          const raw = await fs.promises.readFile(rp, 'utf8');
+          let parsed: any = null;
+          try { parsed = JSON.parse(raw || '{}'); } catch (e) { parsed = null; }
+          const filesFromReport = Array.isArray(parsed?.files) ? parsed.files : [];
+          console.info(`reprocess: fallback parsed report, filesFromReport.length=${filesFromReport.length}`);
+          job = {
+            jobId,
+            files: filesFromReport,
+            status: 'pending',
+            progress: 0,
+            createdAt: parsed?.createdAt || new Date().toISOString(),
+            updatedAt: parsed?.createdAt || new Date().toISOString(),
+          } as Job;
+        } else {
+          console.info('reprocess: fallback report file not found at', rp);
+        }
+      } catch (e) {
+        console.warn('reprocess: fallback parse error', e && (e as any).message ? (e as any).message : e);
+      }
+    }
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    // Generate local report deterministically from uploaded files
+    const local = await reportGenerator.generateLocalReport(jobId, UPLOADS, job.files);
+    const rep: any = local.report || {};
+    const ana: any = local.analysis || {};
+
+    // Normalize and ensure fields
+    rep.runId = rep.runId || jobId;
+    rep.createdAt = rep.createdAt || job.startedAt || job.createdAt;
+    rep.completedAt = rep.completedAt || new Date().toISOString();
+    rep.files = Array.isArray(rep.files) && rep.files.length ? rep.files : job.files;
+
+    // Compute and merge local KPIs/flags to ensure the canonical report contains source-aware metrics
+    try {
+      const localK = await computeLocalKpisAndFlags(UPLOADS, rep.files || []);
+      rep.kpis = rep.kpis || {};
+      if (localK?.kpis) {
+        for (const [k, v] of Object.entries(localK.kpis)) {
+          const num = typeof v === 'number' && Number.isFinite(v) ? v : null;
+          if (num !== null) {
+            rep.kpis[k] = num;
+            rep.kpis[`${k}_local`] = num;
+          } else {
+            rep.kpis[k] = v as any;
+          }
+        }
+      }
+      rep.redFlags = Array.isArray(rep.redFlags) ? rep.redFlags : [];
+      if (localK?.redFlags && Array.isArray(localK.redFlags)) {
+        const existing = new Map<string, any>();
+        for (const r of rep.redFlags) existing.set(r.id || r.title || JSON.stringify(r), r);
+        for (const rf of localK.redFlags) {
+          const key = rf.id || rf.title || JSON.stringify(rf);
+          if (!existing.has(key)) rep.redFlags.push(rf);
+        }
+      }
+    } catch (e) {
+      console.warn('reprocess: failed to compute local KPIs', e && (e as any).message ? (e as any).message : e);
+    }
+
+    // Persist report and analysis
+    const reportPath = path.join(REPORTS, `report_${jobId}.json`);
+    const analysisPath = path.join(ANALYSIS, `analysis_${jobId}.json`);
+    try {
+      await fs.promises.writeFile(reportPath, JSON.stringify(rep, null, 2), 'utf8');
+      await fs.promises.writeFile(analysisPath, JSON.stringify(ana, null, 2), 'utf8');
+    } catch (e) {
+      console.warn('reprocess: failed to write artifacts', e && (e as any).message ? (e as any).message : e);
+    }
+
+    // Update job to completed
+    try {
+      job.status = 'completed';
+      job.progress = 100;
+      job.completedAt = rep.completedAt;
+      job.updatedAt = new Date().toISOString();
+      updateJob(job);
+    } catch (e) {
+      console.warn('reprocess: failed to update job record', e && (e as any).message ? (e as any).message : e);
+    }
+
+    console.info(`reprocess: completed for job ${jobId}`);
+    return res.json({ ok: true, report: rep });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // health
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', now: new Date().toISOString() }));
 
@@ -754,39 +929,50 @@ app.use(errorHandler);
 app.use(chatRouter);
 
 // Background job processor
-function processJob(jobId: string) {
-  getJob(jobId, async (job) => {
-    if (!job) throw new Error('Job not found');
-    job.status = 'processing';
-    job.progress = 0;
-    job.startedAt = new Date().toISOString();
-    job.updatedAt = job.startedAt;
-    updateJob(job);
-
-    // simulate parsing each file (1-2s) and update progress
-    const total = Math.max(1, job.files.length);
-    for (let i = 0; i < total; i++) {
-      const wait = 1000 + Math.floor(Math.random() * 1000);
-      await new Promise((r) => setTimeout(r, wait));
-      const progress = Math.min(95, Math.round(((i + 1) / total) * 90) + (Math.floor(Math.random() * 7) - 3));
-      job.progress = Math.max(0, Math.min(95, progress));
-      job.updatedAt = new Date().toISOString();
-      updateJob(job);
-      console.log(`Job ${jobId}: progress ${job.progress}%`);
-    }
-
-    // finalize: if an OpenAI key is available, prefer LLM-based generation; otherwise
-    // use the free deterministic local report generator to avoid placeholders or external costs.
-    try {
-      let mlRes: any = null;
-      // Use LLM-based generation if an LLM provider is configured (OpenAI or Gemini)
-      if (process.env.OPENAI_API_KEY || (process.env.LLM_PROVIDER && process.env.LLM_PROVIDER.toLowerCase() === 'gemini')) {
-        mlRes = await mlClient.generateReport(jobId);
-      } else {
-        // free local generator
-        const local = await reportGenerator.generateLocalReport(jobId, UPLOADS, job.files);
-        mlRes = { report: local.report, analysis: local.analysis, raw: 'local-generated' };
+async function processJob(jobOrId: string | Job) {
+  const jobId = typeof jobOrId === 'string' ? jobOrId : jobOrId.jobId;
+  // Ensure we have a job object to work with; prefer the provided object when available
+  let job: Job | undefined = typeof jobOrId === 'string' ? undefined : jobOrId;
+  if (!job) {
+    job = await new Promise<Job | undefined>((resolve) => {
+      try {
+        getJob(jobId, (j) => resolve(j as Job | undefined));
+      } catch (e) {
+        resolve(undefined);
       }
+    });
+  }
+  if (!job) throw new Error('Job not found');
+  job.status = 'processing';
+  job.progress = 0;
+  job.startedAt = new Date().toISOString();
+  job.updatedAt = job.startedAt;
+  updateJob(job);
+
+  // simulate parsing each file (1-2s) and update progress
+  const total = Math.max(1, job.files.length);
+  for (let i = 0; i < total; i++) {
+    const wait = 1000 + Math.floor(Math.random() * 1000);
+    await new Promise((r) => setTimeout(r, wait));
+    const progress = Math.min(95, Math.round(((i + 1) / total) * 90) + (Math.floor(Math.random() * 7) - 3));
+    job.progress = Math.max(0, Math.min(95, progress));
+    job.updatedAt = new Date().toISOString();
+    updateJob(job);
+    console.log(`Job ${jobId}: progress ${job.progress}%`);
+  }
+
+  // finalize: if an OpenAI key is available, prefer LLM-based generation; otherwise
+  // use the free deterministic local report generator to avoid placeholders or external costs.
+  try {
+    let mlRes: any = null;
+    // Use LLM-based generation if an LLM provider is configured (OpenAI or Gemini)
+    if (process.env.OPENAI_API_KEY || (process.env.LLM_PROVIDER && process.env.LLM_PROVIDER.toLowerCase() === 'gemini')) {
+      mlRes = await mlClient.generateReport(jobId);
+    } else {
+      // free local generator
+      const local = await reportGenerator.generateLocalReport(jobId, UPLOADS, job.files);
+      mlRes = { report: local.report, analysis: local.analysis, raw: 'local-generated' };
+    }
       const completedAt = new Date().toISOString();
 
       // validate minimal fields and normalize
@@ -1027,6 +1213,15 @@ function processJob(jobId: string) {
       // write files
       const reportPath = path.join(REPORTS, `report_${jobId}.json`);
       const analysisPath = path.join(ANALYSIS, `analysis_${jobId}.json`);
+      // Ensure we have the job.files shape available when persisting the report.
+      try {
+        const jobForWrite = await loadJobRecord(jobId);
+        if (jobForWrite && Array.isArray(jobForWrite.files) && (!Array.isArray(rep.files) || rep.files.length === 0)) {
+          rep.files = jobForWrite.files;
+        }
+      } catch (e) {
+        // non-fatal, continue with whatever rep.files currently contains
+      }
       // if the ML client returned raw text (LLM output), persist it for debugging
       try {
         if (mlRes && mlRes.raw) {
@@ -1070,9 +1265,17 @@ function processJob(jobId: string) {
             const rep = local.report || {};
             const ana = local.analysis || null;
             rep.runId = rep.runId || jobId;
-            rep.createdAt = rep.createdAt || job.startedAt || job.createdAt;
-            rep.completedAt = rep.completedAt || completedAt;
-            rep.files = Array.isArray(rep.files) ? rep.files : job.files;
+            // attempt to load job fields for timestamps/files if available
+            try {
+              const jobForWrite = await loadJobRecord(jobId);
+              rep.createdAt = rep.createdAt || (jobForWrite ? (jobForWrite.startedAt || jobForWrite.createdAt) : job.startedAt || job.createdAt);
+              rep.completedAt = rep.completedAt || completedAt;
+              rep.files = Array.isArray(rep.files) && rep.files.length ? rep.files : (jobForWrite && Array.isArray(jobForWrite.files) ? jobForWrite.files : job.files);
+            } catch (e) {
+              rep.createdAt = rep.createdAt || job.startedAt || job.createdAt;
+              rep.completedAt = rep.completedAt || completedAt;
+              rep.files = Array.isArray(rep.files) ? rep.files : job.files;
+            }
             const finalAnalysis = ana || {
               analysisId: `an-${uuidv4()}`,
               reportRunId: jobId,
@@ -1109,7 +1312,6 @@ function processJob(jobId: string) {
           console.log(`Job ${jobId}: failed during ML report generation`);
         }
     }
-  });
 }
 
 // Start server when script is executed directly

@@ -1,0 +1,4 @@
+Date,TransactionID,Amount,Description,Store
+2024-04-10,TX-B2001,29.99,Online sale,Store 12
+2024-04-11,TX-B2002,59.99,In-store sale,Store 03
+2024-04-12,TX-B2003,499.00,Bulk order,Store HQ

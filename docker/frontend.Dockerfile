@@ -1,7 +1,8 @@
 # Multi-stage build: build Vite app and serve with nginx
+# Build stage: install dev dependencies so Vite is available during build
 FROM node:18-alpine AS builder
 WORKDIR /app
-ENV NODE_ENV=production
+ENV NODE_ENV=development
 # Install deps
 COPY package.json package-lock.json* ./
 RUN npm ci --prefer-offline --no-audit --no-fund

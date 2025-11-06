@@ -1,45 +1,62 @@
 version: '3.8'
 
 services:
-	frontend:
-		build:
-			context: .
-			dockerfile: docker/frontend.Dockerfile
-		image: fdd-frontend:local
-		ports:
-			- "3000:80"
-		depends_on:
-			- backend
-		environment:
-			- VITE_API_BASE_URL=http://localhost:3001/api
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    image: fdd-frontend:local
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_BASE_URL=http://localhost:3001/api
 
-	backend:
-		build:
-			context: ./backend
-			dockerfile: ../docker/backend.Dockerfile
-		image: fdd-backend:local
-		ports:
-			- "3001:3001"
-		volumes:
-			- backend_uploads:/app/uploads
-			- backend_reports:/app/reports
-		environment:
-			- PORT=3001
-			- ALLOW_ML_HTTP_FALLBACK=true
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
+    image: fdd-backend:local
+    ports:
+      - "3001:3001"
+    volumes:
+      - backend_uploads:/app/uploads
+      - backend_reports:/app/reports
+    environment:
+      - PORT=3001
+      - ALLOW_ML_HTTP_FALLBACK=true
+      # Use Gemini directly from the backend container by providing the
+      # host's GEMINI_API_KEY via the compose environment substitution.
+      # This lets the backend call the external Gemini API (Google) using
+      # the key stored in the host .env (GEMINI_API_KEY). It avoids relying
+      # on the local ml_service container which has proven flaky in dev.
+      - LLM_PROVIDER=gemini
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # When set to true the backend will assemble document context from the
+      # uploaded files directory and will NOT call the ml_service container.
+      - AVOID_ML_SERVICE=true
+      # When true, transient provider failures will fall back to the local
+      # deterministic generator instead of marking the job as failed.
+      - LLM_FAIL_OPEN=true
+      # Clear ML_SERVICE_URL to avoid accidentally pointing at the ml_service
+      # container. Leave unset if you explicitly want the backend to call the
+      # local indexer container.
+      - ML_SERVICE_URL=
 
-	ml_service:
-		build:
-			context: ./ml_service
-			dockerfile: ../docker/ml.Dockerfile
-		image: fdd-ml:local
-		ports:
-			- "8001:8001"
-		environment:
-			- PORT=8001
+  ml_service:
+    build:
+      context: ./ml_service
+      dockerfile: ../docker/ml.Dockerfile
+    image: fdd-ml:local
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
 
 volumes:
-	backend_uploads:
-	backend_reports:
+  backend_uploads:
+  backend_reports:
 
 # Notes:
 # - Frontend serves the production build via nginx on port 3000.

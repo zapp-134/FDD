@@ -8,6 +8,7 @@ import fs from 'fs';
 import { ProcessFileResult, GenerateResult, SearchHit } from './mlClient.types';
 import * as mock from './mlClient.mock';
 import path from 'path';
+import { getJob } from './jobStore';
 
 // Usage tracking to avoid unexpected provider costs. This is a conservative,
 // local-only guard that persists a simple daily counter in backend/data/llm_usage.json.
@@ -522,10 +523,53 @@ export async function generateReport(jobId: string, topK = 10): Promise<{ report
     }
 
     // assemble document
-  // Ask the local indexer to assemble a larger context and prioritize numeric/tabular content
-  const assembleQuestion = `Assemble up to ${Math.min(8000, topK * 1000)} characters of the most relevant text for job ${jobId}. Prioritize CSV rows, invoice/receipt/transaction numeric rows and headers. Return plain concatenated text.`;
-  const gen = await generate(jobId, assembleQuestion, Math.max(topK, 15));
-    const docText = gen?.answer || '';
+  // Build the document text that will be sent to Gemini. By default we ask the local
+  // indexer (ml_service) to assemble a prioritized context via /generate. However,
+  // in some dev setups the ml_service container is undesirable; when
+  // AVOID_ML_SERVICE=true we will assemble the context locally from uploaded
+  // files under the backend uploads directory so the backend does NOT call the
+  // other container at all.
+  let docText = '';
+  const avoidMl = (process.env.AVOID_ML_SERVICE || '').toLowerCase() === 'true';
+  if (avoidMl) {
+    try {
+      const ROOT = path.resolve(__dirname, '..');
+      const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(ROOT, 'uploads');
+      // get job record to learn which files to include
+      await new Promise<void>((resolve) => {
+        getJob(jobId, async (job) => {
+          try {
+            if (job && Array.isArray(job.files) && job.files.length) {
+              const parts: string[] = [];
+              for (const f of job.files) {
+                const p = path.join(UPLOADS_DIR, f);
+                try {
+                  if (fs.existsSync(p)) {
+                    const txt = await fs.promises.readFile(p, 'utf8');
+                    // limit size to avoid huge requests
+                    parts.push(`--- FILE: ${f} ---\n${String(txt).slice(0, 200000)}`);
+                  }
+                } catch (e) {
+                  // ignore per-file read errors
+                }
+              }
+              docText = parts.join('\n\n');
+            }
+          } catch (e) {
+            // ignore
+          }
+          resolve();
+        });
+      });
+    } catch (e) {
+      docText = '';
+    }
+  } else {
+    // Ask the local indexer to assemble a larger context and prioritize numeric/tabular content
+    const assembleQuestion = `Assemble up to ${Math.min(8000, topK * 1000)} characters of the most relevant text for job ${jobId}. Prioritize CSV rows, invoice/receipt/transaction numeric rows and headers. Return plain concatenated text.`;
+    const gen = await generate(jobId, assembleQuestion, Math.max(topK, 15));
+    docText = gen?.answer || '';
+  }
 
     // Try callGeminiAPI with retry-then-fallback
     let lastErr: any = null;

@@ -1,0 +1,4 @@
+InvoiceID,Date,Amount,Status,Customer
+B-INV-5001,2024-01-15,300.00,paid,Customer X
+B-INV-5002,2024-02-01,1200.00,overdue,Customer Y
+B-INV-5003,2024-02-28,450.00,paid,Customer Z

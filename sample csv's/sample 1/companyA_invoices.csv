@@ -1,0 +1,4 @@
+InvoiceID,Date,Amount,Status
+INV-2001,2024-04-30,950.00,paid
+INV-2002,2024-05-15,1250.00,pending
+INV-2003,2024-06-01,499.99,paid

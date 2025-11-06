@@ -1,0 +1,4 @@
+ReceiptID,Date,Amount,Vendor,Category
+R-A-4001,2024-05-10,12.50,Cafe Good,Meals
+R-A-4002,2024-05-11,200.00,Office Supplies Inc,Office
+R-A-4003,2024-05-12,49.99,Stationery Co,Office

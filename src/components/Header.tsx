@@ -10,9 +10,8 @@ export const Header = () => {
   const location = useLocation();
 
     const navigation = [
-    { name: 'Home', href: '/', icon: Home },
-    { name: 'Upload', href: '/upload', icon: Upload },
-    { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
+  { name: 'Home', href: '/', icon: Home },
+  { name: 'Upload', href: '/upload', icon: Upload },
     // Link Analysis to the latest report redirect so users land on a real report if available
     { name: 'Analysis', href: '/reports/latest?tab=analysis', icon: TrendingUp },
   ];

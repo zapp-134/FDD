@@ -1,0 +1,4 @@
+Date,TransactionID,Amount,Description,Account
+2024-06-05,TX-1010,75.00,Online subscription,Expenses
+2024-06-06,TX-1011,600.00,Consultant fee,Professional Services
+2024-06-07,TX-1012,150.25,Travel reimbursement,Travel
