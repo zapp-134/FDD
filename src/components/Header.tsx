@@ -9,12 +9,12 @@ import { BarChart3, Upload, FileText, Home, TrendingUp } from 'lucide-react';
 export const Header = () => {
   const location = useLocation();
 
-  const navigation = [
+    const navigation = [
     { name: 'Home', href: '/', icon: Home },
     { name: 'Upload', href: '/upload', icon: Upload },
     { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
-    { name: 'Summary', href: '/summary', icon: FileText },
-    { name: 'Analysis', href: '/analysis/novasyss_001', icon: TrendingUp },
+    // Link Analysis to the latest report redirect so users land on a real report if available
+    { name: 'Analysis', href: '/reports/latest?tab=analysis', icon: TrendingUp },
   ];
 
   return (

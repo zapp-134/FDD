@@ -112,23 +112,28 @@ function getUsageFor(provider: string) {
 
 const BASE = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8001';
 const USE_MOCK = process.env.USE_ML_CLIENT_MOCK === 'true';
+const ML_HTTP_TIMEOUT = Number(process.env.ML_HTTP_TIMEOUT_MS || '15000');
 
 function makeClient(): AxiosInstance {
   return axios.create({
     baseURL: BASE,
-    timeout: 30000,
+    timeout: ML_HTTP_TIMEOUT,
     headers: { 'Content-Type': 'application/json' },
   });
 }
 
+// Exponential backoff with small jitter
 async function retry<T>(fn: () => Promise<T>, attempts = 3, backoffMs = 500): Promise<T> {
   let lastErr: any;
   for (let i = 0; i < attempts; i++) {
     try {
       return await fn();
-    } catch (err) {
+    } catch (err: any) {
       lastErr = err;
-      const wait = backoffMs * Math.pow(2, i);
+      const base = backoffMs * Math.pow(2, i);
+      const jitter = Math.floor(Math.random() * Math.min(1000, base));
+      const wait = base + jitter;
+      console.warn(`mlClient.retry: attempt ${i + 1} failed, retrying in ${wait}ms:`, err && err.message ? err.message : err);
       await new Promise((r) => setTimeout(r, wait));
     }
   }
@@ -138,26 +143,31 @@ async function retry<T>(fn: () => Promise<T>, attempts = 3, backoffMs = 500): Pr
 export async function processFile(jobId: string, filePath: string, fileName: string): Promise<ProcessFileResult> {
   if (USE_MOCK) return mock.ingestLocal(jobId, filePath, fileName) as unknown as ProcessFileResult;
   const client = makeClient();
+
+  // Prefer sending the absolute file path so the ML service (running locally) can read it directly.
+  // If the environment explicitly requires sending file content (e.g., ML runs remotely), set ML_SEND_BASE64=true.
+  const sendBase64 = (process.env.ML_SEND_BASE64 || 'false').toLowerCase() === 'true';
+  const absPath = path.resolve(filePath);
+
   return retry(async () => {
     try {
-      // Read file contents and send as base64 to avoid requiring shared volumes between services
-      let contentBase64: string | undefined;
-      try {
-        const b = await fs.promises.readFile(filePath);
-        contentBase64 = b.toString('base64');
-      } catch (e) {
-        // If reading fails, still attempt to call service with path (older behavior)
-        contentBase64 = undefined;
-      }
       const payload: any = { jobId, file_name: fileName };
-      if (contentBase64) payload.content_base64 = contentBase64;
-      else payload.file_path = filePath;
+      if (sendBase64) {
+        // include content as base64 only when explicitly requested
+        const b = await fs.promises.readFile(absPath);
+        payload.content_base64 = b.toString('base64');
+      } else {
+        payload.file_path = absPath;
+      }
+
       const resp = await client.post('/process-file', payload);
       if (resp.status >= 200 && resp.status < 300) return resp.data as { jobId: string; numChunks: number; indexed: boolean };
       throw new Error(`ML service responded with status ${resp.status}`);
     } catch (err: any) {
-      // fallback to local mock only if explicitly allowed by env
-      if (err && err.code === 'ECONNREFUSED' && process.env.ALLOW_ML_HTTP_FALLBACK === 'true') {
+      // If ML is unreachable and fallback is explicitly allowed, use local mock.
+      const code = err?.code || err?.response?.status;
+      if ((code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 502 || code === 503 || code === 504) && process.env.ALLOW_ML_HTTP_FALLBACK === 'true') {
+        console.warn('mlClient.processFile: ML unreachable, falling back to local mock (ALLOW_ML_HTTP_FALLBACK=true)');
         return mock.ingestLocal(jobId, filePath, fileName) as unknown as ProcessFileResult;
       }
       throw err;
@@ -174,10 +184,34 @@ export async function search(query: string, k = 5): Promise<SearchHit[]> {
       if (resp.status >= 200 && resp.status < 300) return resp.data.hits as SearchHit[];
       throw new Error(`ML service responded with status ${resp.status}`);
     } catch (err: any) {
-      if (err && err.code === 'ECONNREFUSED' && process.env.ALLOW_ML_HTTP_FALLBACK === 'true') return mock.searchLocal(query, k);
+      if ((err && (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND')) && process.env.ALLOW_ML_HTTP_FALLBACK === 'true') return mock.searchLocal(query, k);
       throw err;
     }
   });
+}
+
+/**
+ * Lightweight ML availability probe. Returns true when ML service responds to a simple search request.
+ * Respects USE_MOCK and returns true immediately when mocking is enabled.
+ */
+export async function ensureMlAvailable(timeoutMs = 5000): Promise<boolean> {
+  if (USE_MOCK) return true;
+  const client = makeClient();
+  try {
+    // Prefer an explicit health endpoint if present for faster deterministic probes
+    try {
+      const h = await client.get('/health', { timeout: Math.min(timeoutMs, 2000) });
+      if (h && h.status >= 200 && h.status < 300) return true;
+    } catch (e) {
+      // ignore and fallthrough to search probe
+    }
+    // fallback: perform a cheap search query; if the ML service is up it should return quickly (possibly empty hits)
+    const resp = await client.get('/search', { params: { q: '__health_check__', k: 1 }, timeout: timeoutMs });
+    return !!resp && resp.status >= 200 && resp.status < 300;
+  } catch (err: any) {
+    console.warn('mlClient.ensureMlAvailable: probe failed', err?.message ?? err);
+    return false;
+  }
 }
 
 export async function generate(jobId: string, question: string, topK = 5): Promise<GenerateResult> {
@@ -224,7 +258,15 @@ async function callGeminiAPI(jobId: string, docText: string, topK: number): Prom
   const GEMINI_MODEL = process.env.GEMINI_MODEL || 'models/gemini-2.5-pro';
   const GEMINI_MODEL_PATH = GEMINI_MODEL.startsWith('models/') ? GEMINI_MODEL : `models/${GEMINI_MODEL}`;
 
-  const prompt = `Document content:\n${docText}\n\nNow generate a JSON object with top-level fields "report" and "analysis". Ensure runId equals ${jobId}. Return ONLY valid JSON.`;
+  const prompt = `You are an analyst assistant. The following is assembled document text for job ${jobId}. It may contain CSV rows, invoices, receipts, and transactions. Carefully analyze the numeric data and text and produce a single JSON object only. The JSON MUST have two top-level keys: "report" and "analysis".
+
+"report" must include: runId (string), createdAt (ISO timestamp), completedAt (ISO timestamp), summary (short 1-2 sentence executive summary), kpis (object of named KPI keys to numeric or human-friendly string values), redFlags (array of objects with id,title,severity (low|medium|high),description), trends (array of {title,description}), files (array of filenames).
+
+"analysis" must include structured sections (array) with titles and content and optionally insights (array of short strings).
+
+Important: return ONLY valid JSON. Do not emit any explanatory text. Use ISO timestamps, numeric values where appropriate, and keep summaries concise. If you cannot find relevant data, set report.status = "Failed" and provide an explanation in analysis with recommended next steps.
+
+Document content:\n${docText}\n`;
   const geminiPayload: any = {
     contents: [ { role: 'user', parts: [{ text: prompt }] } ]
   };
@@ -375,6 +417,64 @@ function parseGeminiResponse(textOut: string): { report: any; analysis: any | nu
       const parsed = JSON.parse(final);
       return { report: parsed.report || parsed, analysis: parsed.analysis || null, raw: String(textOut) };
     } catch (e) {
+      // Final fallback: try progressively JSON.parse unwrapping if the model returned an escaped JSON string
+      try {
+        let candidate2 = String(jsonText);
+        for (let i = 0; i < 6; i++) {
+          try {
+            const maybe = JSON.parse(candidate2);
+            if (typeof maybe === 'string') {
+              candidate2 = maybe;
+              continue;
+            }
+            // parsed to an object
+            return { report: (maybe as any).report || maybe, analysis: (maybe as any).analysis || null, raw: String(textOut) };
+          } catch (e2) {
+            // try simple unescape and loop
+            const next = candidate2.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+            if (next === candidate2) break;
+            candidate2 = next;
+          }
+        }
+      } catch (e3) {
+        // fall through to try a balanced-brace extraction strategy below
+      }
+
+      // Final attempt: extract the nearest balanced JSON object from the raw text
+      try {
+        const rawStr = String(textOut);
+        const extractBalanced = (s: string): string | null => {
+          let idx = s.indexOf('{');
+          while (idx !== -1) {
+            let depth = 0;
+            let inString = false;
+            let escape = false;
+            for (let i = idx; i < s.length; i++) {
+              const ch = s[i];
+              if (escape) {
+                escape = false;
+                continue;
+              }
+              if (ch === '\\') { escape = true; continue; }
+              if (ch === '"') { inString = !inString; continue; }
+              if (!inString) {
+                if (ch === '{') depth++;
+                else if (ch === '}') depth--;
+                if (depth === 0) return s.slice(idx, i + 1);
+              }
+            }
+            idx = s.indexOf('{', idx + 1);
+          }
+          return null;
+        };
+        const candidate = extractBalanced(rawStr);
+        if (candidate) {
+          const parsed = JSON.parse(candidate);
+          return { report: parsed.report || parsed, analysis: parsed.analysis || null, raw: String(textOut) };
+        }
+      } catch (e4) {
+        // ignore and fall through
+      }
       throw parseErr;
     }
   }
@@ -408,7 +508,7 @@ async function handleFallback(jobId: string, topK: number) {
 export async function generateReport(jobId: string, topK = 10): Promise<{ report: any; analysis: any | null; raw: string }> {
   const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'openai').toLowerCase();
   const OPENAI_KEY = process.env.OPENAI_API_KEY;
-  const MAX_CALLS = Number(process.env.LLM_MAX_CALLS_PER_DAY || '5');
+  const MAX_CALLS = Number(process.env.LLM_MAX_CALLS_PER_DAY || '100');
   const MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS_PER_CALL || '1024');
   const LLM_FAIL_OPEN = (process.env.LLM_FAIL_OPEN || 'true').toLowerCase() !== 'false';
 
@@ -422,7 +522,9 @@ export async function generateReport(jobId: string, topK = 10): Promise<{ report
     }
 
     // assemble document
-    const gen = await generate(jobId, `Assemble relevant document content for job ${jobId}.`, topK);
+  // Ask the local indexer to assemble a larger context and prioritize numeric/tabular content
+  const assembleQuestion = `Assemble up to ${Math.min(8000, topK * 1000)} characters of the most relevant text for job ${jobId}. Prioritize CSV rows, invoice/receipt/transaction numeric rows and headers. Return plain concatenated text.`;
+  const gen = await generate(jobId, assembleQuestion, Math.max(topK, 15));
     const docText = gen?.answer || '';
 
     // Try callGeminiAPI with retry-then-fallback
@@ -437,6 +539,13 @@ export async function generateReport(jobId: string, topK = 10): Promise<{ report
         return parsed;
       } catch (err: any) {
         lastErr = err;
+        // Log detailed raw error for diagnostics (helps debug 500s or provider responses)
+        try {
+          const raw = err?.raw || err?.response?.data || err?.message || err;
+          console.error('Gemini provider call error (raw):', typeof raw === 'string' ? raw.slice(0, 2000) : JSON.stringify(raw).slice(0, 2000));
+        } catch (e) {
+          console.error('Gemini provider call error (failed to stringify error)');
+        }
         const cls = classifyProviderError(err);
         // If hard auth/model error -> fail immediately
         if (cls.isAuthOrModel) {

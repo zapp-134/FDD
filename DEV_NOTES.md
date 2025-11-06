@@ -5,6 +5,34 @@
 
 # Developer Notes - FDD Agent
 
+## Local Development
+
+Use the following quick-start for local development:
+
+1. Copy `backend/.env.example` -> `backend/.env` and fill required vars (for example `GEMINI_API_KEY` or `GOOGLE_APPLICATION_CREDENTIALS`). Do not commit secrets.
+
+2. From repo root, install dependencies:
+
+```powershell
+npm install
+cd frontend && npm ci
+cd ../backend && npm ci
+```
+
+3. Start both services:
+
+```powershell
+npm run dev
+# or use the run-local scripts: .\run-local.ps1 (Windows) or ./run-local.sh (POSIX)
+```
+
+Backend: http://localhost:3001
+Frontend: http://localhost:5173
+
+Notes:
+- Do NOT commit `.env` files with secrets. Keep `.env.example` in the repo as a template.
+- The backend will refuse to start or will operate in degraded mode if required env vars are missing.
+
 ## Files for Backend Implementation
 
 When implementing the real backend to replace the mock server, focus on these key files:

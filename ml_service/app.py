@@ -49,11 +49,60 @@ async def process_file(req: ProcessFileRequest):
             text = f.read()
     except Exception:
         text = ''
+    # If CSV-like, parse numeric columns and append a short numeric summary as an extra document
+    summary_text = ''
+    try:
+        lower = req.file_name.lower()
+        if lower.endswith('.csv') or lower.endswith('.tsv'):
+            import io, csv
+            reader = csv.reader(io.StringIO(text))
+            rows = []
+            header = None
+            for i, r in enumerate(reader):
+                if i == 0:
+                    header = r
+                else:
+                    rows.append(r)
+                if i >= 50:
+                    break
+            # identify numeric columns
+            numeric_idx = []
+            col_sums = {}
+            col_counts = {}
+            if header:
+                for ci in range(len(header)):
+                    col_sums[ci] = 0.0
+                    col_counts[ci] = 0
+                for r in rows:
+                    for ci, v in enumerate(r):
+                        try:
+                            val = float(v.replace('$','').replace(',',''))
+                            col_sums[ci] += val
+                            col_counts[ci] += 1
+                        except Exception:
+                            continue
+                numeric_cols = []
+                for ci in range(len(header)):
+                    if col_counts.get(ci,0) > 0:
+                        avg = col_sums[ci] / col_counts[ci]
+                        numeric_cols.append((header[ci] if ci < len(header) else f'col{ci}', col_sums[ci], col_counts[ci], avg))
+                if numeric_cols:
+                    parts = [f"CSV numeric summary for {req.file_name}:"]
+                    for name, s, c, a in numeric_cols:
+                        parts.append(f"{name}=sum:{s:.2f}@count:{c}@avg:{a:.2f}")
+                    summary_text = '\n'.join(parts)
+    except Exception:
+        # best-effort: ignore parsing errors
+        summary_text = ''
     # naive chunking: split by 1000 chars
     chunks = [text[i:i+1000] for i in range(0, len(text), 1000)] if text else []
     for i, c in enumerate(chunks):
         documents.append(c)
         meta.append({'chunkId': str(uuid.uuid4()), 'jobId': req.jobId, 'fileName': req.file_name})
+    if summary_text:
+        # add the summary as an extra mini-document so the generator can use it
+        documents.append(summary_text)
+        meta.append({'chunkId': str(uuid.uuid4()), 'jobId': req.jobId, 'fileName': req.file_name + '::summary'})
     # (re)fit vectorizer
     global vectorizer, X
     if documents:
@@ -67,6 +116,11 @@ async def process_file(req: ProcessFileRequest):
         with open(os.path.join(INDEX_DIR, 'docs.pkl'), 'wb') as df:
             pickle.dump(documents, df)
     return {'jobId': req.jobId, 'numChunks': len(chunks), 'indexed': True}
+
+
+@app.get('/health')
+async def health():
+    return {'status': 'ok', 'now': __import__('datetime').datetime.utcnow().isoformat() + 'Z'}
 
 @app.get('/search')
 async def search(q: str, k: int = 5):
@@ -94,11 +148,17 @@ async def generate(req: GenerateRequest):
     for i in idxs:
         if sims[i] <= 0: continue
         sources.append({'chunkId': meta[i]['chunkId'], 'jobId': meta[i]['jobId'], 'fileName': meta[i]['fileName'], 'score': float(sims[i]), 'snippet': documents[i][:400]})
-        assembled.append(documents[i])
-    # naive generation: return the first few sentences from assembled
-    answer = ' '.join( [ s.strip() for s in assembled ])
+        # If the source looks like a CSV or a transactions file, include a larger slice to surface numeric rows
+        fn = meta[i].get('fileName','') if isinstance(meta[i], dict) else ''
+        if fn.lower().endswith('.csv') or 'transaction' in fn.lower() or 'invoice' in fn.lower() or 'receipt' in fn.lower():
+            assembled.append(documents[i][:2000])
+        else:
+            assembled.append(documents[i][:2000])
+    # Assemble a longer context to help the external LLM (Gemini) reason across documents.
+    answer = ' '.join([s.strip() for s in assembled])
     if not answer:
         answer = "I couldn't find relevant information in the indexed documents."
     else:
-        answer = answer[:1000]
+        # cap to a few thousand chars to avoid extremely large payloads
+        answer = answer[:4000]
     return {'answer': answer, 'sources': sources}

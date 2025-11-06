@@ -1,0 +1,26 @@
+React + Vite — Modern frontend framework and dev server used for the UI (fast HMR, component-driven development).
+TypeScript — Typed superset of JavaScript used across frontend and backend for safer, self-documented code.
+Node.js (Express) — Backend application platform and web framework that serves the API and job endpoints.
+Python (FastAPI) — Lightweight Python microservice framework used for the ML service API (document processing and generation).
+Uvicorn — ASGI server used to run the FastAPI ML microservice in development and production.
+Docker — Containerization tool used to build reproducible service images for local and production deployments.
+Docker Compose — Local orchestration tool used to run multiple services together during development.
+Kubernetes — Production orchestration platform used for deploying, scaling, and managing containers (Helm charts used here).
+Helm — Kubernetes package manager used to template and deploy charts for the application stack.
+GitHub Actions — CI/CD automation used to run tests, build images, scan artifacts, and deploy to clusters.
+Prometheus — Metrics collection system used to scrape service metrics for monitoring and alerting.
+Grafana — Visualization and dashboarding tool used to display service metrics, SLOs, and LLM cost dashboards.
+OpenTelemetry — Distributed tracing and telemetry instrumentation used to trace requests across services.
+Loki / ELK — Centralized logging stack (Loki or ELK) used to collect and query structured logs across services.
+FAISS — Vector search library used to index and search embedded document chunks for retrieval-augmented generation.
+SQLite / JSON job store — Lightweight durable job storage used for tracking ingestion jobs in local deployments.
+Git — Version control system used to track source code, branches, and pull requests.
+npm — Node package manager used to install dependencies, run scripts, and manage the monorepo tasks.
+PowerShell — Scripting shell used to run local orchestration scripts and sample upload tooling on Windows.
+Gemini (Google Generative API) — LLM provider used to produce narrative analysis and structured JSON output when credentials are available.
+OpenAI — Alternative LLM provider supported as a fallback option for generation workloads.
+Google Application Default Credentials (ADC) / KMS — Cloud auth and secrets management approach used for secure service credentials and key management.
+Playwright — End-to-end testing framework used to validate UI flows and regression tests.
+k6 — Load testing tool used to validate performance and scaling characteristics under load.
+Dependabot / SCA tools — Automated dependency scanning and software composition analysis used to detect vulnerabilities.
+Sentry (or similar) — Optional error monitoring service used to capture runtime exceptions and context for triage.

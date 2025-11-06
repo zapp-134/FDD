@@ -174,3 +174,29 @@ All colors MUST be HSL.
   }
 }
 
+/* Print styles for clean PDF export */
+@media print {
+  html, body {
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Hide everything by default */
+  body * {
+    visibility: hidden !important;
+  }
+  /* Only show the marked report area */
+  .printable-report, .printable-report * {
+    visibility: visible !important;
+  }
+  .printable-report {
+    position: static !important;
+    left: 0 !important;
+    top: 0 !important;
+  }
+  /* Utility to explicitly hide elements when printing */
+  .print-hide {
+    display: none !important;
+  }
+}
+

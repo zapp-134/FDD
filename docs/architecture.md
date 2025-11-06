@@ -10,7 +10,7 @@ This document summarizes the current repository architecture, runtime components
 - Frontend: Vite + React/TypeScript SPA in `src/` (pages + components). Provides upload UI, job list, and chat/report viewer.
 - Backend: Node.js + Express (TypeScript). Handles multipart uploads, job creation, worker orchestration, SQLite jobStore, writes reports to `reports/`.
 - ML microservice: Python FastAPI. Handles embedding, FAISS indexing and retrieval, and a generate/search API. Index persisted to `ml_service/index/`.
-- Dev orchestration: `docker-compose.yml` for local full-stack runs. Scripts: `scripts/smoke-test.ps1`, DOCX generator.
+- Dev orchestration: services are run locally during development using npm scripts. Scripts: local test helpers and DOCX generator.
 ### 2 — 3‑tier logical diagram
 ```mermaid
 flowchart LR
@@ -36,7 +36,7 @@ flowchart LR
   C --> D
 ```
 
-Notes: in dev we run all three tiers in Docker Compose. For production we recommend moving the data tier to managed Postgres, object storage (S3/MinIO), and a managed vector DB or hosted Weaviate/Pinecone.
+Notes: in development we run all tiers locally using npm scripts; no container orchestration is required for local development. For production we recommend moving the data tier to managed Postgres, object storage (S3/MinIO), and a managed vector DB or hosted Weaviate/Pinecone.
 ### 3 — Contracts (tiny "contract" for key APIs)
 - Upload endpoint (/api/ingest): accepts multipart/form-data file; returns { jobId, status } (201). Backend immediately creates a job and persists to jobStore. Worker processes file and writes report to `reports/report_<jobId>.json` and `reports/report_<jobId>.md`.
 - ML `/process-file` (FastAPI): Accepts JSON payload with either `file_path` (dev mount) or `content_base64`. Returns { jobId, numChunks, indexed: boolean }.
@@ -55,13 +55,14 @@ Success criteria (functionality):
 - Persistence outages (SQLite/filestore): ensure the worker marks job error and exposes a re-run/resume mechanism.
 
 ### 5 — Test / verification checklist (functionality-first)
-1. Install deps and start compose locally (dev):
+1. Install deps and start services locally (dev):
 
 ```pwsh
 # from repo root (PowerShell)
 npm install
-pip install -r ml_service/requirements-full.txt
-docker compose up --build -d
+cd frontend && npm ci
+cd ../backend && npm ci
+# (Optional) for the ML microservice: pip install -r ml_service/requirements-full.txt
 ```
 
 2. Run unit tests (backend/frontend):
@@ -70,15 +71,10 @@ docker compose up --build -d
 npm test # runs Jest unit tests for backend and frontend where configured
 ```
 
-3. Run the smoke test (automated):
+3. Manual sanity checks:
 
-```pwsh
-powershell -File scripts/smoke-test.ps1
-```
-
-4. Manual sanity checks (if smoke-test fails):
-- POST a file: curl -F "file=@public/samples/sample_financial_data.csv" http://localhost:3001/api/ingest
-- Poll job: GET /api/job/<jobId>
+- POST a file: `curl -F "file=@public/samples/sample_financial_data.csv" http://localhost:3001/api/ingest`
+- Poll job: `GET /api/job/<jobId>`
 - Fetch report: open `reports/report_<jobId>.json` or use the frontend Report Viewer.
 
 ### 6 — Shortcomings found in repo (actionable list to reach "perfect functionality")
@@ -106,7 +102,7 @@ Manual acceptance: run smoke-test and spot-check `reports/Professional_FDD_Repor
 ### 9 — Next immediate steps (after this doc)
 1. Implement the deterministic ML mock used for CI. This will let us assert functionality in CI without downloading large models.
 2. Add unit tests for mlClient and FastAPI endpoints.
-3. Run the smoke test locally and fix any failures uncovered by tests.
+3. Run the local test checklist above and fix any failures uncovered by tests.
 
 ---
 Audit completed: this file documents the current architecture and a focused checklist to reach functional completeness. I will mark the audit task done in the tracked todo list.

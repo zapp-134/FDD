@@ -13,7 +13,7 @@ import Dashboard from "./pages/Dashboard";
 import Upload from "./pages/Upload";
 import ReportViewer from "./pages/ReportViewer";
 import Analysis from "./pages/Analysis";
-import Summary from "./pages/Summary";
+import LatestReport from "./pages/LatestReport";
 import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
 
@@ -29,7 +29,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/summary" element={<Summary />} />
+            <Route path="/reports/latest" element={<LatestReport />} />
             <Route path="/upload" element={<Upload />} />
             <Route path="/reports/:runId" element={<ReportViewer />} />
             <Route path="/analysis/:id" element={<Analysis />} />

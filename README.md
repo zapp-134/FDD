@@ -24,56 +24,40 @@ A polished, modern frontend for AI-powered financial due diligence analysis. Upl
 - **Animations**: Framer Motion for smooth transitions
  
 
-## Quick Start
+## Quick Start (Local, without Docker)
 
-1. **Install dependencies**:
-   ```bash
-   npm ci
-   ```
+This repository runs the frontend and backend locally using npm scripts. Follow these steps to start both parts in development mode.
 
-2. **Start development environment (frontend + backend)**:
-   ```bash
-   npm run dev:frontend
-   npm run dev:backend
-   ```
-   The repo no longer bundles a demo mock server. Start the real backend from the `backend` folder or use Docker Compose.
+1. Install dependencies for the frontend and backend:
 
-3. **View the application**:
-      - Frontend: http://localhost:4173 (Vite preview)
-      - Backend API: http://localhost:3001/api
-
-### Run full stack with Docker Compose (backend + ML service)
-
-The repo includes a `docker-compose.yml` that builds two services: `backend` and `ml_service`.
-
-From the repo root:
-
-```powershell
-# Build images and start services
-docker compose up --build
-
-# The backend will be available at http://localhost:3001
-# The ML service will be available at http://localhost:8001
+```bash
+cd frontend
+npm ci
+cd ../backend
+npm ci
 ```
 
-### Full local Docker stack (recommended)
+2. Start the backend (development):
 
-We've added a fuller `docker-compose.yml` that runs the frontend (preview), backend, ML service, Postgres (for future migration), and MinIO (object storage). To start everything locally:
-
-```powershell
-# From repo root
-docker compose up --build
-
-# Frontend preview: http://localhost:4173
-# Backend API: http://localhost:3001/api
-# ML service: http://localhost:8001
-# MinIO console: http://localhost:9000 (access with minioadmin / minioadmin)
+```bash
+cd backend
+npm run dev
 ```
 
-Notes:
-- The compose file mounts local folders for easier development. Data for Postgres and MinIO are stored in named volumes (`db-data`, `minio-data`).
-- If you don't need MinIO or Postgres locally, remove those services from `docker-compose.yml`.
-By default the backend is configured to talk to the ML service at `http://ml_service:8001` inside the compose network.
+3. Start the frontend (development):
+
+```bash
+cd frontend
+npm run dev
+```
+
+4. Open the app:
+
+- Frontend: http://localhost:5173 (Vite dev server)
+- Backend API: http://localhost:3001/api
+
+Configuration
+- Create a `backend/.env` file (see `backend/.env.example`) and set required values like `GEMINI_API_KEY` or `GOOGLE_APPLICATION_CREDENTIALS` if you prefer ADC. The backend uses `dotenv` to load environment variables when run locally.
 
 ## Available Scripts
 
@@ -258,4 +242,4 @@ SIMULATE_GEMINI_TRANSIENTS=true
 PREVENT_START_ON_BAD_MODEL=false
 ```
 
-If you enable `SIMULATE_GEMINI_TRANSIENTS` and run the backend in Docker Compose, you should see a log line `Simulated transient 503` followed by retry logs and (if configured) fallback behavior.
+If you enable `SIMULATE_GEMINI_TRANSIENTS` during local development, you should see a log line `Simulated transient 503` followed by retry logs and (if configured) fallback behavior.

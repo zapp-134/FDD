@@ -6,6 +6,7 @@ import { ChatWidget } from '@/components/ChatWidget';
 
 const ReportViewer = () => {
   const { runId } = useParams<{ runId: string }>();
+  const location = window.location;
 
   if (!runId) {
     return (
